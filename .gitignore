@@ -8,6 +8,3 @@ wheels/
 
 # Virtual environments
 .venv
-
-# OSMnx cache files
-examples/data/osmnx-cache
