@@ -1,19 +1,39 @@
 import re
 from collections.abc import Callable
+from copy import deepcopy
 from pathlib import Path
+from typing import Literal, TypedDict
 
 import geopandas as gpd
 import networkx as nx
 import numpy as np
 import osmnx as ox
 import pandas as pd
+from shapely import LineString, polygonize
 
-DEFAULT_ROAD_DEFINITIONS = {
+
+class EdgeDefinitions(TypedDict):
+    major: list[str]
+    minor: list[str]
+
+
+class NodeDefinitions(TypedDict):
+    safe: list[str]
+    unsafe: list[str]
+
+
+class IntermediateNodeData(TypedDict): ...
+
+
+class IntermediateEdgeData(TypedDict): ...
+
+
+DEFAULT_ROAD_DEFINITIONS: NodeDefinitions = {
     "major": ["motor", "primary", "secondary", "tertiary"],
     "minor": ["residential", "cycleway"],
 }
 
-DEFAULT_CROSSING_DEFINITIONS = {
+DEFAULT_CROSSING_DEFINITIONS: EdgeDefinitions = {
     "safe": ["traffic_signals", "uncontrolled", "unmarked"],
     "unsafe": ["no"],
 }
@@ -74,9 +94,9 @@ def _match_road(highway_value: str, valid_pats: list[str]):
     return re.match("|".join(valid_pats), highway_value) is not None
 
 
-def _coalesce_crossing_types(gdf_nodes: gpd.GeoDataFrame) -> pd.Series:
+def _standardize_crossing_types(df_nodes: pd.DataFrame) -> pd.Series:
     """
-    Coalesces all possible crossing types for each row in `gdf_nodes` into
+    Standardizes all possible crossing types for each row in `df_nodes` into
     five categories:
 
     - `traffic_signals`: crossing that contain traffic signals.
@@ -88,23 +108,101 @@ def _coalesce_crossing_types(gdf_nodes: gpd.GeoDataFrame) -> pd.Series:
     - `none`: where crossing is neither explicitly allowed not explicitly
       disallowed.
 
-    Returns a new column with the coalesced crossings.
+    Returns a new column with the standardized crossings.
     """
 
     conditions = {
         "traffic_signals": (
-            gdf_nodes["crossing"].str.contains("traffic_signals")
-            | gdf_nodes["highway"].str.contains("traffic_signals")
-            | (gdf_nodes["crossing:signals"] == "yes")
+            df_nodes["crossing"].str.contains("traffic_signals")
+            | df_nodes["highway"].str.contains("traffic_signals")
+            | (df_nodes["crossing:signals"] == "yes")
         ),
         "uncontrolled": (
-            gdf_nodes["crossing"].isin(["uncontrolled", "marked", "zebra"])
+            df_nodes["crossing"].isin(["uncontrolled", "marked", "zebra"])
         ),
-        "unmarked": (gdf_nodes["crossing"].str.contains("unmarked")),
-        "no": (gdf_nodes["crossing"].isin["no", "separate"]),
+        "unmarked": (df_nodes["crossing"].str.contains("unmarked")),
+        "no": (df_nodes["crossing"].isin["no", "separate"]),
     }
 
     return np.select(conditions.keys(), conditions.values(), "none")
+
+
+def _update_traffic_signals(
+    G: nx.MultiDiGraph,
+    u: int,
+    max_dist: float,
+    edge_definitions: EdgeDefinitions,
+    current_dist: float | None = None,
+) -> None:
+    """
+    Recursively sets the distance to the nearest traffic signal for each node,
+    up to a maximum distance. Stores this value in the node's
+    `traffic_signal_distance` attribute.
+
+    Parameters
+    ---
+    G : MultiDiGraph
+        Street graph to update. Crossing types must be standardized.
+    u : int
+        Node to update in `G`.
+    max_dist : float
+        Maximum distance allowed for a traffic signal. If a node's nearest
+        traffic signal is further away than `max_dist`, then it won't have a
+        `traffic_signal_distance` attribute.
+    edge_definitions : EdgeDefinitions
+        Dictionary that defines major and minor roads. The distance to each
+        traffic signal will only be measured along these roads (network
+        distance, not euclidean distance).
+    current_dist : float or None, default: None
+        Distance to the closest traffic signal currently known.
+    """
+
+    # this is probably not a very efficient algorithm (we are potentially
+    # revisiting the same nodes multiple times), but it works for what i'm
+    # trying to do
+
+    # if the node is a traffic signal crossing, its distance is 0
+    if G.nodes[u].get("crossing") == "traffic_signals":
+        G.add_node(u, traffic_signal_distance=0)
+    # if we are given a current_dist, assign it
+    elif current_dist is not None:
+        G.add_node(
+            u,
+            traffic_signal_distance=current_dist,
+        )
+
+    # if the node is near a traffic signal, we might be able to "propagate"
+    # the traffic signal to its neighbors
+    current_u = G.nodes[u].get("traffic_signal_distance")
+    if current_u is not None:
+        for _, v, data in G.out_edges(u, data=True):
+            current_v = G.nodes[v].get("traffic_signal_distance")
+            candidate_v = data.get("length") + current_u
+            highway = data.get("highway")
+
+            # only propagate if both of the following are true:
+            # - we are moving along a major or minor road
+            # - the destination node's new closest traffic signal would be at
+            #   most max_dist, and would be closer than the current closest
+            #   traffic signal
+            if _match_road(
+                highway, edge_definitions["major"] + edge_definitions["minor"]
+            ) and (
+                (current_v is not None and candidate_v < current_v)
+                or (current_v is None and candidate_v <= max_dist)
+            ):
+                # update the node (which might in turn update its neighbors)
+                _update_traffic_signals(
+                    G,
+                    v,
+                    max_dist=max_dist,
+                    edge_definitions=edge_definitions,
+                    current_dist=candidate_v,
+                )
+
+
+def _get_angle(geometry: LineString) -> float: ...
+def _get_walkable(edge: pd.Series) -> Literal["both", "left", "right", "neither"]: ...
 
 
 def _set_node_safety(
@@ -130,17 +228,81 @@ def _set_edge_crossable(
     gdf_edges: gpd.GeoDataFrame, uncrossable_pats: list[str]
 ) -> pd.Series:
     """
-    Sets whether each edge in `gdf_nodes` is crossable based on
-    `edge_defintions`. If the value in `gdf_edges["highway"]` matches with one
-    of the regex patterns in `uncrossable_pats`, then the edge is declared
-    uncrossable. If none match, then the edge is declared crossable by
-    default.
+    Sets whether each edge in `gdf_nodes` is crossable. If the value in
+    `gdf_edges["highway"]` matches with one of the regex patterns in
+    `uncrossable_pats`, then the edge is declared uncrossable. If none match,
+    then the edge is declared crossable by default.
 
     Returns a new column with the "crossability" of each edge.
     """
 
     return np.where(
         gdf_edges["highway"].str.contains("|".join(uncrossable_pats)),
-        "uncrossable",
-        "crossable",
+        False,
+        True,
+    )
+
+
+def generate_crossing_graph(
+    base_graph: nx.MultiDiGraph,
+    node_definitions: NodeDefinitions | None = None,
+    edge_definitions: EdgeDefinitions | None = None,
+    unsafe_distance_from_signal: float = 20,
+    fix_marked_crossings_near_signals: float | None = None,
+):
+    """
+    TODO
+    """
+
+    if node_definitions is None:
+        node_definitions = DEFAULT_CROSSING_DEFINITIONS
+    if edge_definitions is None:
+        edge_definitions = DEFAULT_ROAD_DEFINITIONS
+
+    # copy base graph (so we don't accidentally modify it)
+    base_graph = deepcopy(base_graph)
+
+    # standardize crossings
+    df_nodes = pd.DataFrame.from_dict(dict(base_graph.nodes(data=True)), orient="index")
+    df_nodes["std_crossing"] = _standardize_crossing_types(df_nodes)
+    nx.set_node_attributes(
+        base_graph, df_nodes["std_crossing"].to_dict(), name="crossing"
+    )
+    del df_nodes
+
+    # assign distance to closest traffic signal (up to a maximum distance)
+    max_dist = max(unsafe_distance_from_signal, fix_marked_crossings_near_signals or 0)
+    for u in iter(base_graph.nodes):
+        _update_traffic_signals(
+            base_graph,
+            u,
+            max_dist=max_dist,
+            edge_definitions=edge_definitions,
+        )
+
+    # TODO rest of function
+
+    gdf_nodes, gdf_edges = ox.graph_to_gdfs(base_graph)
+    gdf_nodes["safety"] = _set_node_safety(gdf_nodes, node_definitions)
+    gdf_edges["crossable"] = _set_edge_crossable(gdf_edges, edge_definitions["major"])
+    gdf_edges["angle"] = gdf_edges.apply(_get_angle, axis=1)
+    gdf_edges["walkable"] = gdf_edges.applt(_get_walkable, axis=1)
+
+    # nodes that are near traffic signals and aren't explicitly safe are
+    # deemed unsafe
+    gdf_nodes.loc[
+        (gdf_nodes["traffic_signal_distance"] <= unsafe_distance_from_signal)
+        & (gdf_nodes["safety"] != "safe"),
+        "safety",
+    ] = "unsafe"
+
+    # add attribute to identify edges that are on the outside border of the
+    # study area (no intermediate nodes will be generated between two edges on
+    # the boundary)
+    _, edges_undirected = ox.graph_to_gdfs(base_graph.to_undirected())
+    poly = polygonize(edges_undirected.geometry.union_all())
+    poly_gdf = gpd.GeoDataFrame(list(poly), crs=4326)
+    poly_boundary = poly_gdf.union_all().boundary
+    gdf_edges["in_boundary"] = gdf_edges.overlaps(poly_boundary) | gdf_edges.within(
+        poly_boundary
     )
