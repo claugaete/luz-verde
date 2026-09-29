@@ -66,7 +66,7 @@ Given a road $e$, we will consider it **crossable** if it is not a major road.
 With these two concepts, we can introduce our first two rules:
 
 > If a road $e$ is crossable, you can always cross it along a base node $u$,
-> unless $u$ is unsafe
+> unless $u$ is unsafe.
 
 > If a road $e$ is not crossable, you can only cross it along a base node $u$
 > if u is safe.
@@ -134,5 +134,4 @@ optional rule:
 
 This is obviously not going to be correct in all cases, but it is a temporary
 heuristic while a more permanent fix (retagging all incorrect crossings) is
-worked on. By default, we retag marked crossing that are less than 30 meters
-away from a traffic signal.
+worked on.
