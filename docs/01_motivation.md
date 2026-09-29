@@ -21,7 +21,7 @@ Independencia, Santiago, for example:
 OpenStreetMap. Independencia, Santiago](img/vivaceta-osm.png)
 
 OpenStreetMap (and even Google Maps) recommend you cross Fermín Vivaceta if
-you want to get from Retiro to Los Ángeles However, Fermín Vivaceta is a
+you want to get from Retiro to Los Ángeles. However, Fermín Vivaceta is a
 two-way street with no crossings of any kind, meaning pedestrians don't have
 the right of way and would have to wait for both ways to be cleared of
 oncoming cars before crossing. Not only is this slow, but also unsafe: a
