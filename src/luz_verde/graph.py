@@ -201,12 +201,62 @@ def _update_traffic_signals(
                 )
 
 
-def _get_angle(geometry: LineString) -> float: ...
-def _get_walkable(edge: pd.Series) -> Literal["both", "left", "right", "neither"]: ...
+def _get_angle(geometry: LineString) -> float:
+    """
+    Gets the angle for a certain LineString object, calculated from its first
+    two points, with respect to a horizontal east-west line that crosses the
+    first point.
+    """
+
+    p0 = geometry.coords[0]
+    p1 = geometry.coords[1]
+
+    return np.arctan2(p1[1] - p0[1], p1[0] - p0[0])
+
+
+def _get_walkable(edge: pd.Series) -> Literal["both", "left", "right", "neither"]:
+    """
+    Returns which sides an edge/road is walkable along. Can be either "both",
+    "left", "right" or "neither".
+
+    The side is calculated from the perspective starting at the first point in
+    the edge, and ending at the last point in the edge (e.g. if the left side
+    is walkable, you can walk along the edge while always being to the left of
+    said edge if you were looking forward while walking).
+    """
+
+    if edge["highway"] in ["motor", "cycleway"]:
+        return "neither"
+
+    walkable_left = (
+        (edge["sidewalk"] in ["left", "both"])
+        | (edge["sidewalk:both"] == "yes")
+        | (edge["sidewalk:left"] == "yes")
+    )
+
+    walkable_right = (
+        (edge["sidewalk"] in ["right", "both"])
+        | (edge["sidewalk:both"] == "yes")
+        | (edge["sidewalk:right"] == "yes")
+    )
+
+    if edge["reversed"]:
+        walkable_left, walkable_right = walkable_right, walkable_left
+
+    if walkable_left:
+        if walkable_right:
+            return "both"
+        else:
+            return "left"
+    else:
+        if walkable_right:
+            return "right"
+        else:
+            return "neither"
 
 
 def _set_node_safety(
-    gdf_nodes: gpd.GeoDataFrame, node_definitions: dict[str, list[str]]
+    gdf_nodes: gpd.GeoDataFrame, node_definitions: NodeDefinitions
 ) -> pd.Series:
     """
     Sets the safety for each node in `gdf_nodes` based on `node_defintions`,
@@ -280,13 +330,11 @@ def generate_crossing_graph(
             edge_definitions=edge_definitions,
         )
 
-    # TODO rest of function
-
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(base_graph)
     gdf_nodes["safety"] = _set_node_safety(gdf_nodes, node_definitions)
     gdf_edges["crossable"] = _set_edge_crossable(gdf_edges, edge_definitions["major"])
     gdf_edges["angle"] = gdf_edges.apply(_get_angle, axis=1)
-    gdf_edges["walkable"] = gdf_edges.applt(_get_walkable, axis=1)
+    gdf_edges["walkable"] = gdf_edges.apply(_get_walkable, axis=1)
 
     # nodes that are near traffic signals and aren't explicitly safe are
     # deemed unsafe
@@ -306,3 +354,7 @@ def generate_crossing_graph(
     gdf_edges["in_boundary"] = gdf_edges.overlaps(poly_boundary) | gdf_edges.within(
         poly_boundary
     )
+
+    # TODO rest of function (generating intermediate nodes, connecting them
+    # according to the previously established rules, cleaning up the resulting
+    # GeoDataFrames and returning a graph)
