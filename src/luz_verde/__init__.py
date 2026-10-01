@@ -10,5 +10,6 @@ OpenStreetMap data.
 from .graph import generate_crossing_graph, get_base_graph
 
 __all__ = [
+    "generate_crossing_graph",
     "get_base_graph",
 ]

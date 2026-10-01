@@ -314,15 +314,16 @@ def _set_edge_crossable(
 
 
 def _generate_intermediate_nodes(
-    gdf_nodes: gpd.GeoDataFrame,
-    gdf_edges: gpd.GeoDataFrame,
+    gdf_nodes: gpd.GeoDataFrame, gdf_edges: gpd.GeoDataFrame, show_progress: bool
 ) -> pd.DataFrame:
     """
     TODO
     """
 
     records = []
-    for name, group in tqdm(gdf_edges.reset_index().groupby("u")):
+    groupby = gdf_edges.reset_index().groupby("u")
+    iterator = tqdm(groupby) if show_progress else groupby
+    for name, group in iterator:
         edges = group.sort_values("angle").reset_index(drop=True)
         n = len(edges)
 
@@ -347,10 +348,64 @@ def _generate_intermediate_nodes(
             )
 
     new_nodes_df = pd.DataFrame(records)
-    new_nodes_geometry = gdf_nodes.loc[new_nodes_df["base_node"]].geometry.values
-    return new_nodes_df.rename_axis("osmid").assign(
-        x=new_nodes_geometry.x,
-        y=new_nodes_geometry.y,
+    return (
+        gpd.GeoDataFrame(
+            new_nodes_df,
+            geometry=gdf_nodes.loc[new_nodes_df["base_node"]].geometry.values,
+            crs=gdf_nodes.crs,
+        )
+        .rename_axis("osmid")
+        .assign(
+            x=lambda gdf: gdf.geometry.x,
+            y=lambda gdf: gdf.geometry.y,
+        )
+    )
+
+
+def _join_nodes(
+    origin_nodes: gpd.GeoDataFrame,
+    destination_nodes: gpd.GeoDataFrame,
+    join_left: list[str],
+    join_right: list[str],
+    join_type: str,
+    side: str,
+) -> gpd.GeoDataFrame:
+    """
+    Merge nodes that share an edge on a given side. Keeps edge identifiers
+    from the origin nodes.
+    """
+
+    edge_cols = ["u_base", "v_base", "key_base"]
+
+    return (
+        origin_nodes.merge(
+            destination_nodes[["destination", *join_right]],
+            left_on=join_left,
+            right_on=join_right,
+            how="inner",
+        )[["origin", "destination", *join_left]]
+        .rename(columns=dict(zip(join_left, edge_cols)))
+        .assign(type=join_type, side=side)
+    )
+
+
+def _add_edge_data_to_joined_nodes(
+    joined_nodes: pd.DataFrame, gdf_edges: gpd.GeoDataFrame, columns: list[str]
+) -> gpd.GeoDataFrame:
+    """
+    Merges joined nodes with data from `gdf_edges` and returns a GeoDataFrame.
+    """
+
+    return gpd.GeoDataFrame(
+        (
+            joined_nodes.merge(
+                gdf_edges[columns],
+                left_on=["u_base", "v_base", "key_base"],
+                right_index=True,
+            )
+        ),
+        geometry="geometry",
+        crs=gdf_edges.crs,
     )
 
 
@@ -360,6 +415,7 @@ def generate_crossing_graph(
     edge_definitions: EdgeDefinitions | None = None,
     unsafe_distance_from_signal: float = 20,
     fix_marked_crossings_near_signals: float = 0,
+    verbose: bool = False,
 ):
     """
     TODO
@@ -369,6 +425,9 @@ def generate_crossing_graph(
         node_definitions = DEFAULT_CROSSING_DEFINITIONS
     if edge_definitions is None:
         edge_definitions = DEFAULT_ROAD_DEFINITIONS
+
+    if verbose:
+        print("(1/3) Calculating auxiliary variables...")
 
     # copy base graph (so we don't accidentally modify it)
     base_graph = deepcopy(base_graph)
@@ -432,9 +491,129 @@ def generate_crossing_graph(
         poly_boundary
     )
 
-    intermediate_nodes = _generate_intermediate_nodes(gdf_nodes, gdf_edges)
+    # generate intermediate nodes
+    if verbose:
+        print("(2/3) Generating intermediate nodes...")
+    intermediate_nodes = _generate_intermediate_nodes(
+        gdf_nodes, gdf_edges, show_progress=verbose
+    )
 
-    # TODO rest of function (generating intermediate nodes, connecting them
-    # according to the previously established rules, cleaning up the resulting
-    # GeoDataFrames and returning a graph)
-    return ox.graph_from_gdfs(gdf_nodes, gdf_edges)
+    # GENERATE CONNECTIONS BETWEEN INTERMEDIATE NODES
+    if verbose:
+        print("(3/3) Generating intermediate edges...")
+    origin_nodes = intermediate_nodes.rename_axis("origin").reset_index()
+    destination_nodes = intermediate_nodes.rename_axis("destination").reset_index()
+
+    # 1. walking along an edge
+    right_side_walks = _join_nodes(
+        origin_nodes,
+        destination_nodes,
+        join_left=["u_left", "v_left", "key_left"],
+        join_right=["v_right", "u_right", "key_right"],
+        join_type="walk",
+        side="right",
+    )
+    left_side_walks = _join_nodes(
+        origin_nodes,
+        destination_nodes,
+        join_left=["u_right", "v_right", "key_right"],
+        join_right=["v_left", "u_left", "key_left"],
+        join_type="walk",
+        side="left",
+    )
+    all_walks = pd.concat([right_side_walks, left_side_walks], ignore_index=True)
+    all_walks = _add_edge_data_to_joined_nodes(
+        all_walks,
+        gdf_edges,
+        columns=[
+            "osmid",
+            "highway",
+            "name",
+            "length",
+            "crossable",
+            "walkable",
+            "geometry",
+        ],
+    )
+    # the side we are walking on must be deemed walkable
+    all_walks = all_walks[
+        (all_walks["walkable"] == "both") | (all_walks["walkable"] == all_walks["side"])
+    ]
+
+    # 2. crossing an edge along a base node
+    cw_crosses = _join_nodes(
+        origin_nodes,
+        destination_nodes,
+        join_left=["u_right", "v_right", "key_right"],
+        join_right=["u_left", "v_left", "key_left"],
+        join_type="cross",
+        side="clockwise",
+    )
+    ccw_crosses = _join_nodes(
+        origin_nodes,
+        destination_nodes,
+        join_left=["u_left", "v_left", "key_left"],
+        join_right=["u_right", "v_right", "key_right"],
+        join_type="cross",
+        side="counterclockwise",
+    )
+    all_crosses = pd.concat([cw_crosses, ccw_crosses], ignore_index=True)
+    # add base node data (we will need it to determine which crossing spots
+    # are valid)
+    all_crosses = all_crosses.merge(
+        gdf_nodes[["crossing", "safety", "geometry"]],
+        left_on="u_base",
+        right_index=True,
+    ).assign(length=0.1)
+    all_crosses = _add_edge_data_to_joined_nodes(
+        all_crosses,
+        gdf_edges,
+        columns=[
+            "osmid",
+            "highway",
+            "name",
+            "crossable",
+            "walkable",
+        ],
+    )
+    # if the edge is crossable, then we can cross unless the node is unsafe;
+    # if the edge is uncrossable, then we can only cross if the node is safe
+    all_crosses = all_crosses[
+        (all_crosses["safety"] == "safe")
+        | (all_crosses["crossable"] & (all_crosses["safety"] != "unsafe"))
+    ]
+
+    # consolidate intermediate edges (walks + crosses)
+    intermediate_edges = (
+        gpd.GeoDataFrame(
+            data=pd.concat([all_walks, all_crosses], ignore_index=True),
+            geometry="geometry",
+            crs=all_crosses.crs,
+        )
+        # rename columns and add a new "key" for duplicate u, v pairs (so that
+        # osmnx accepts this graph as valid)
+        .rename(
+            columns={
+                "origin": "u",
+                "destination": "v",
+                "osmid": "edge_osmid",
+                "highway": "edge_highway",
+                "name": "edge_name",
+                "crossable": "edge_crossable",
+                "walkable": "edge_walkable",
+                "crossing": "node_crossing",
+                "safety": "node_safety",
+            }
+        )
+        .assign(key=lambda gdf: gdf.groupby(["u", "v"]).cumcount())
+        .set_index(["u", "v", "key"])
+    )
+
+    # generate new graph and remove isolate nodes (useless!)
+    new_graph = ox.graph_from_gdfs(intermediate_nodes, intermediate_edges)
+    new_graph.remove_nodes_from(list(nx.isolates(new_graph)))
+
+    if verbose:
+        print("Graph generated.")
+
+    return new_graph
