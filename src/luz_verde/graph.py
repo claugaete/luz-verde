@@ -1,3 +1,8 @@
+"""
+Functions used to generate the crossing graph from an OSMnx street network
+graph.
+"""
+
 import re
 from collections.abc import Callable
 from copy import deepcopy
