@@ -16,6 +16,7 @@ import osmnx as ox
 import pandas as pd
 from shapely import LineString
 from shapely.ops import polygonize
+from tqdm.auto import tqdm
 
 
 class EdgeDefinitions(TypedDict):
@@ -312,6 +313,47 @@ def _set_edge_crossable(
     )
 
 
+def _generate_intermediate_nodes(
+    gdf_nodes: gpd.GeoDataFrame,
+    gdf_edges: gpd.GeoDataFrame,
+) -> pd.DataFrame:
+    """
+    TODO
+    """
+
+    records = []
+    for name, group in tqdm(gdf_edges.reset_index().groupby("u")):
+        edges = group.sort_values("angle").reset_index(drop=True)
+        n = len(edges)
+
+        for i in range(n):
+            left, right = edges.iloc[i], edges.iloc[(i + 1) % n]
+            if left.in_boundary and right.in_boundary:
+                continue
+            records.append(
+                {
+                    "u_left": left.u,
+                    "v_left": left.v,
+                    "key_left": left.key,
+                    "u_right": right.u,
+                    "v_right": right.v,
+                    "key_right": right.key,
+                    "base_node": name,
+                    "angle": np.arctan2(
+                        np.sin(left.angle) + np.sin(right.angle),
+                        np.cos(left.angle) + np.cos(right.angle),
+                    ),
+                }
+            )
+
+    new_nodes_df = pd.DataFrame(records)
+    new_nodes_geometry = gdf_nodes.loc[new_nodes_df["base_node"]].geometry.values
+    return new_nodes_df.rename_axis("osmid").assign(
+        x=new_nodes_geometry.x,
+        y=new_nodes_geometry.y,
+    )
+
+
 def generate_crossing_graph(
     base_graph: nx.MultiDiGraph,
     node_definitions: NodeDefinitions | None = None,
@@ -389,6 +431,8 @@ def generate_crossing_graph(
     gdf_edges["in_boundary"] = gdf_edges.overlaps(poly_boundary) | gdf_edges.within(
         poly_boundary
     )
+
+    intermediate_nodes = _generate_intermediate_nodes(gdf_nodes, gdf_edges)
 
     # TODO rest of function (generating intermediate nodes, connecting them
     # according to the previously established rules, cleaning up the resulting
