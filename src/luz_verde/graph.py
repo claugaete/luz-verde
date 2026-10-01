@@ -14,7 +14,8 @@ import networkx as nx
 import numpy as np
 import osmnx as ox
 import pandas as pd
-from shapely import LineString, polygonize
+from shapely import LineString
+from shapely.ops import polygonize
 
 
 class EdgeDefinitions(TypedDict):
@@ -127,10 +128,10 @@ def _standardize_crossing_types(df_nodes: pd.DataFrame) -> pd.Series:
             df_nodes["crossing"].isin(["uncontrolled", "marked", "zebra"])
         ),
         "unmarked": (df_nodes["crossing"].str.contains("unmarked")),
-        "no": (df_nodes["crossing"].isin["no", "separate"]),
+        "no": (df_nodes["crossing"].isin(["no", "separate"])),
     }
 
-    return np.select(conditions.keys(), conditions.values(), "none")
+    return np.select(conditions.values(), conditions.keys(), "none")
 
 
 def _update_traffic_signals(
@@ -262,10 +263,14 @@ def _get_walkable(edge: pd.Series) -> Literal["both", "left", "right", "neither"
         unwalkable_left, unwalkable_right = unwalkable_right, unwalkable_left
 
     match (unwalkable_left, unwalkable_right):
-        case (True, True): return "neither"
-        case (True, False): return "right"
-        case (False, True): return "left"
-        case _: return "both"
+        case (True, True):
+            return "neither"
+        case (True, False):
+            return "right"
+        case (False, True):
+            return "left"
+        case _:
+            return "both"
 
 
 def _set_node_safety(
@@ -281,10 +286,11 @@ def _set_node_safety(
     """
 
     conditions = {
-        node: gdf_nodes["crossing"].isin(matches) for node, matches in node_definitions
+        node: gdf_nodes["crossing"].isin(matches)
+        for node, matches in node_definitions.items()
     }
 
-    return np.select(conditions.keys(), conditions.values(), "neutral")
+    return np.select(conditions.values(), conditions.keys(), "neutral")
 
 
 def _set_edge_crossable(
@@ -346,7 +352,7 @@ def generate_crossing_graph(
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(base_graph)
     gdf_nodes["safety"] = _set_node_safety(gdf_nodes, node_definitions)
     gdf_edges["crossable"] = _set_edge_crossable(gdf_edges, edge_definitions["major"])
-    gdf_edges["angle"] = gdf_edges.apply(_get_angle, axis=1)
+    gdf_edges["angle"] = gdf_edges.geometry.apply(_get_angle)
     gdf_edges["walkable"] = gdf_edges.apply(_get_walkable, axis=1)
 
     # nodes that are near traffic signals and aren't explicitly safe are
@@ -362,7 +368,7 @@ def generate_crossing_graph(
     # the boundary)
     _, edges_undirected = ox.graph_to_gdfs(base_graph.to_undirected())
     poly = polygonize(edges_undirected.geometry.union_all())
-    poly_gdf = gpd.GeoDataFrame(list(poly), crs=4326)
+    poly_gdf = gpd.GeoDataFrame(geometry=list(poly), crs=4326)
     poly_boundary = poly_gdf.union_all().boundary
     gdf_edges["in_boundary"] = gdf_edges.overlaps(poly_boundary) | gdf_edges.within(
         poly_boundary
