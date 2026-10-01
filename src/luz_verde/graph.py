@@ -70,6 +70,7 @@ def get_base_graph(
         "sidewalk:both",
         "sidewalk:left",
         "sidewalk:right",
+        "foot",
     ]
     ox.settings.cache_folder = cache_dir
     ox.settings.bidirectional_network_types.append("all")
@@ -225,34 +226,41 @@ def _get_walkable(edge: pd.Series) -> Literal["both", "left", "right", "neither"
     said edge if you were looking forward while walking).
     """
 
-    if edge["highway"] in ["motor", "cycleway"]:
+    foot = edge["foot"]
+
+    # designated footpaths are always walkable on both sides
+    if _match_road(edge["highway"], ["footway", "pedestrian"]) or foot in (
+        "yes",
+        "designated",
+    ):
+        return "both"
+
+    # motorways and cycleways are never walkable
+    if _match_road(edge["highway"], ["motor", "cycleway"]) or foot in (
+        "no",
+        "use_sidepath",
+    ):
         return "neither"
 
-    walkable_left = (
-        (edge["sidewalk"] in ["left", "both"])
-        | (edge["sidewalk:both"] == "yes")
-        | (edge["sidewalk:left"] == "yes")
-    )
+    # we will only exclude a side if it is explicitly UNwalkable (we will
+    # assume all sides are walkable unless shown otherwise)
+    no_sidewalk = edge["sidewalk"] in ("no", "separate")
+    no_sidewalk_both = edge["sidewalk:both"] in ("no", "separate")
+    no_sidewalk_left = edge["sidewalk:left"] in ("no", "separate")
+    no_sidewalk_right = edge["sidewalk:right"] in ("no", "separate")
 
-    walkable_right = (
-        (edge["sidewalk"] in ["right", "both"])
-        | (edge["sidewalk:both"] == "yes")
-        | (edge["sidewalk:right"] == "yes")
-    )
+    unwalkable_left = no_sidewalk or no_sidewalk_both or no_sidewalk_left
+
+    unwalkable_right = no_sidewalk or no_sidewalk_both or no_sidewalk_right
 
     if edge["reversed"]:
-        walkable_left, walkable_right = walkable_right, walkable_left
+        unwalkable_left, unwalkable_right = unwalkable_right, unwalkable_left
 
-    if walkable_left:
-        if walkable_right:
-            return "both"
-        else:
-            return "left"
-    else:
-        if walkable_right:
-            return "right"
-        else:
-            return "neither"
+    match (unwalkable_left, unwalkable_right):
+        case (True, True): return "neither"
+        case (True, False): return "right"
+        case (False, True): return "left"
+        case _: return "both"
 
 
 def _set_node_safety(
