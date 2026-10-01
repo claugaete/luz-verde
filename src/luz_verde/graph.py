@@ -317,7 +317,7 @@ def generate_crossing_graph(
     node_definitions: NodeDefinitions | None = None,
     edge_definitions: EdgeDefinitions | None = None,
     unsafe_distance_from_signal: float = 20,
-    fix_marked_crossings_near_signals: float | None = None,
+    fix_marked_crossings_near_signals: float = 0,
 ):
     """
     TODO
@@ -331,8 +331,15 @@ def generate_crossing_graph(
     # copy base graph (so we don't accidentally modify it)
     base_graph = deepcopy(base_graph)
 
-    # standardize crossings
     df_nodes = pd.DataFrame.from_dict(dict(base_graph.nodes(data=True)), orient="index")
+
+    # before standardizing, set marked crossings if we want to fix them later
+    if fix_marked_crossings_near_signals > 0:
+        nx.set_node_attributes(
+            base_graph, (df_nodes["crossing"] == "marked").to_dict(), name="is_marked"
+        )
+
+    # standardize crossings
     df_nodes["std_crossing"] = _standardize_crossing_types(df_nodes)
     nx.set_node_attributes(
         base_graph, df_nodes["std_crossing"].to_dict(), name="crossing"
@@ -340,7 +347,7 @@ def generate_crossing_graph(
     del df_nodes
 
     # assign distance to closest traffic signal (up to a maximum distance)
-    max_dist = max(unsafe_distance_from_signal, fix_marked_crossings_near_signals or 0)
+    max_dist = max(unsafe_distance_from_signal, fix_marked_crossings_near_signals)
     for u in iter(base_graph.nodes):
         _update_traffic_signals(
             base_graph,
@@ -363,6 +370,15 @@ def generate_crossing_graph(
         "safety",
     ] = "unsafe"
 
+    # if necessary, fix marked crossings too close to traffic signals
+    if fix_marked_crossings_near_signals > 0:
+        gdf_nodes.loc[
+            (gdf_nodes["traffic_signal_distance"] <= fix_marked_crossings_near_signals)
+            & gdf_nodes["is_marked"],
+            "crossing",
+        ] = "traffic_signals"
+        gdf_nodes = gdf_nodes.drop(columns="is_marked")
+
     # add attribute to identify edges that are on the outside border of the
     # study area (no intermediate nodes will be generated between two edges on
     # the boundary)
@@ -377,3 +393,4 @@ def generate_crossing_graph(
     # TODO rest of function (generating intermediate nodes, connecting them
     # according to the previously established rules, cleaning up the resulting
     # GeoDataFrames and returning a graph)
+    return ox.graph_from_gdfs(gdf_nodes, gdf_edges)
