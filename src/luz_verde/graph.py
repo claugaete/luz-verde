@@ -317,7 +317,18 @@ def _generate_intermediate_nodes(
     gdf_nodes: gpd.GeoDataFrame, gdf_edges: gpd.GeoDataFrame, show_progress: bool
 ) -> pd.DataFrame:
     """
-    TODO
+    For every node `u` in `gdf_nodes`, generates an intermediate node between
+    each pair of adjacent outgoing edges from `u`, saving the edges and the
+    intermediate angle between them as node attributes.
+
+    Parameters
+    ---
+    gdf_nodes : GeoDataFrame
+        The nodes of the street network.
+    gdf_edges : GeoDataFrame
+        The edges of the street network.
+    show_progress : bool
+        Whether to show a progress bar (using `tqdm`).
     """
 
     records = []
