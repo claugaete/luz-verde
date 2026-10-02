@@ -432,7 +432,68 @@ def generate_crossing_graph(
     verbose: bool = False,
 ) -> nx.MultiDiGraph:
     """
-    TODO
+    From a base street network, generates a "crossing graph". Nodes in this
+    graph show all possible places in an intersection where a pedestrian can
+    safely stand, and edges between these nodes show how a pedestrian might
+    cross or walk along a street (when able).
+    
+    Parameters
+    ---
+    base_graph : MultiDiGraph
+        Original street network; generated with `get_base_graph`.
+    node_definitions : NodeDefinitions
+        Dictionary defining which crossing types are considered "safe" (can
+        always cross) and "unsafe" (can never cross). Other crossing types are
+        considered "neutral" (can only cross if the road is not major).
+        
+        The dictionary has two keys: `safe` and `unsafe`, and each value is a
+        list of all crossing types belonging to that category. Possible
+        crossing types are:
+            - `traffic_signals`
+            - `uncontrolled` (zebra crossings or other crossings where
+              pedestrians always have preference)
+            - `unmarked` (no explicit markings on the road but crossing is
+              allowed)
+            - `none` (no markings, pedestrians may cross but don't have the
+              right of way)
+            - `no` (no crossing allowed under any circumstances)
+        By default, `traffic_signals`, `uncontrolled` and `unmarked` are
+        considered safe, while `no` is considered unsafe.
+    edge_definitions : EdgeDefinitions
+        Dictionary defining which highway types are considered "major" (can
+        only cross if the node you are crossing along is safe) and "minor"
+        (can always cross unless the node you are crossing along is unsafe).
+        Highway types that are neither major nor minor follow the same
+        behavior as minor roads, but they don't allow propagation of unsafe
+        crossings near traffic signals (see the `unsafe_distance_from_signal`
+        parameter for more information); this last category should be reserved
+        for roads that don't allow any high-speed traffic (e.g. pedestrian
+        roads, service roads).
+        
+        The dictionary has two keys: `major` and `minor`, and each value is a
+        list of regex patterns; if a highway type matches with any of the
+        regex patterns in the list, it will be considered of that group (e.g.
+        `"major": ["primary"]` will consider both `primary` and `primary_link`
+        as major roads).
+        
+        By default, major roads contain `motor`, `primary`, `secondary` or
+        `tertiary`, and minor roads contain `residential` or `cycleway`.
+    unsafe_distance_from_signal : float, default: 20
+        Crossings that are at most this distance away from a traffic signal
+        will be deemed unsafe, unless they were previously deemed safe. This
+        is to avoid routing that might make people cross along a road when
+        there is a proper traffic signal crossing nearby. Distance is measured
+        along the network, considering only major and minor roads.
+    fix_marked_crossings_near_signals : float, default: 0
+        Crossings tagged `crossing=marked` in OSM will be converted to
+        `crossing=traffic_signals` if they are at most this distance away from
+        a traffic signal. This is a quick fix for a common issue in Santiago's
+        OSM data (where traffic signal crossings are incorrectly tagged as
+        "marked", a type of uncontrolled crossing). The distance is measured
+        along the network, considering only major and minor roads.
+    verbose : bool, default: False
+        Whether to print updates and show progress bars while the graph is
+        being generated.
     """
 
     if node_definitions is None:
