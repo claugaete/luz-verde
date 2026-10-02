@@ -342,19 +342,17 @@ def _generate_intermediate_nodes(
             left, right = edges.iloc[i], edges.iloc[(i + 1) % n]
             if left.in_boundary and right.in_boundary:
                 continue
+            # calculate intermediate angle
+            angle_diff = (left.angle - right.angle) % (2 * np.pi)
+            angle_mid = left.angle - angle_diff / 2
             records.append(
                 {
-                    "u_left": left.u,
+                    "base_node": name,  # this is also u_left and u_right
                     "v_left": left.v,
                     "key_left": left.key,
-                    "u_right": right.u,
                     "v_right": right.v,
                     "key_right": right.key,
-                    "base_node": name,
-                    "angle": np.arctan2(
-                        np.sin(left.angle) + np.sin(right.angle),
-                        np.cos(left.angle) + np.cos(right.angle),
-                    ),
+                    "angle": angle_mid,
                 }
             )
 
@@ -384,12 +382,17 @@ def _join_nodes(
     """
     Merge nodes that share an edge on a given side. Keeps edge identifiers
     from the origin nodes.
+
+    `origin_nodes` must have an `origin` column (or axis), `destination_nodes`
+    must have a `destination` column (or axis), and `join_left` and
+    `join_right` must not share values in common.
     """
 
     edge_cols = ["u_base", "v_base", "key_base"]
 
     return (
-        origin_nodes.merge(
+        origin_nodes[["origin", *join_left]]
+        .merge(
             destination_nodes[["destination", *join_right]],
             left_on=join_left,
             right_on=join_right,
@@ -427,7 +430,7 @@ def generate_crossing_graph(
     unsafe_distance_from_signal: float = 20,
     fix_marked_crossings_near_signals: float = 0,
     verbose: bool = False,
-):
+) -> nx.MultiDiGraph:
     """
     TODO
     """
@@ -513,22 +516,26 @@ def generate_crossing_graph(
     if verbose:
         print("(3/3) Generating intermediate edges...")
     origin_nodes = intermediate_nodes.rename_axis("origin").reset_index()
-    destination_nodes = intermediate_nodes.rename_axis("destination").reset_index()
+    destination_nodes = (
+        intermediate_nodes.rename_axis("destination")
+        .reset_index()
+        .rename(columns={"base_node": "base_node_dest"})
+    )
 
     # 1. walking along an edge
     right_side_walks = _join_nodes(
         origin_nodes,
         destination_nodes,
-        join_left=["u_left", "v_left", "key_left"],
-        join_right=["v_right", "u_right", "key_right"],
+        join_left=["base_node", "v_left", "key_left"],
+        join_right=["v_right", "base_node_dest", "key_right"],
         join_type="walk",
         side="right",
     )
     left_side_walks = _join_nodes(
         origin_nodes,
         destination_nodes,
-        join_left=["u_right", "v_right", "key_right"],
-        join_right=["v_left", "u_left", "key_left"],
+        join_left=["base_node", "v_right", "key_right"],
+        join_right=["v_left", "base_node_dest", "key_left"],
         join_type="walk",
         side="left",
     )
@@ -555,16 +562,16 @@ def generate_crossing_graph(
     cw_crosses = _join_nodes(
         origin_nodes,
         destination_nodes,
-        join_left=["u_right", "v_right", "key_right"],
-        join_right=["u_left", "v_left", "key_left"],
+        join_left=["base_node", "v_right", "key_right"],
+        join_right=["base_node_dest", "v_left", "key_left"],
         join_type="cross",
         side="clockwise",
     )
     ccw_crosses = _join_nodes(
         origin_nodes,
         destination_nodes,
-        join_left=["u_left", "v_left", "key_left"],
-        join_right=["u_right", "v_right", "key_right"],
+        join_left=["base_node", "v_left", "key_left"],
+        join_right=["base_node_dest", "v_right", "key_right"],
         join_type="cross",
         side="counterclockwise",
     )
@@ -619,6 +626,12 @@ def generate_crossing_graph(
         .assign(key=lambda gdf: gdf.groupby(["u", "v"]).cumcount())
         .set_index(["u", "v", "key"])
     )
+
+    # drop edges where origin and destination are the same (useless!)
+    intermediate_edges = intermediate_edges[
+        intermediate_edges.index.get_level_values(0)
+        != intermediate_edges.index.get_level_values(1)
+    ]
 
     # generate new graph and remove isolate nodes (useless!)
     new_graph = ox.graph_from_gdfs(intermediate_nodes, intermediate_edges)
