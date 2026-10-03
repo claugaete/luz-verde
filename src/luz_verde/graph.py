@@ -356,7 +356,11 @@ def _generate_intermediate_nodes(
                 continue
             # calculate intermediate angle
             angle_diff = (left.angle - right.angle) % (2 * np.pi)
-            angle_mid = left.angle - angle_diff / 2
+            if angle_diff == 0:
+                # edge case for one-way streets
+                angle_mid = left.angle + np.pi
+            else:
+                angle_mid = left.angle - angle_diff / 2
             records.append(
                 {
                     "base_node": name,  # this is also u_left and u_right
