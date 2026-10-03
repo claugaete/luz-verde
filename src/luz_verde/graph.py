@@ -50,7 +50,7 @@ def get_base_graph(
     loader_args,
     loader_fn: Callable[..., nx.MultiDiGraph] = ox.graph_from_polygon,
     cache_dir: Path = "cache",
-):
+) -> nx.MultiDiGraph:
     """
     Uses OSMnx to download the base graph with all streets and crossings for a
     certain region. This graph will be used to generate a new graph where
@@ -67,6 +67,12 @@ def get_base_graph(
         positional arguments.
     cache_dir : Path, default: "cache"
         Path to save/load cached OSMnx downloads.
+        
+    Returns
+    ---
+    base_graph : MultiDiGraph
+        Base network graph, with all streets and crossings. All edges are
+        bidirectional.
     """
 
     ox.settings.useful_tags_node = ["highway", "crossing", "crossing:signals"]
@@ -315,7 +321,7 @@ def _set_edge_crossable(
 
 def _generate_intermediate_nodes(
     gdf_nodes: gpd.GeoDataFrame, gdf_edges: gpd.GeoDataFrame, show_progress: bool
-) -> pd.DataFrame:
+) -> gpd.GeoDataFrame:
     """
     For every node `u` in `gdf_nodes`, generates an intermediate node between
     each pair of adjacent outgoing edges from `u`, saving the edges and the
@@ -329,6 +335,12 @@ def _generate_intermediate_nodes(
         The edges of the street network.
     show_progress : bool
         Whether to show a progress bar (using `tqdm`).
+        
+    Returns
+    ---
+    intermediate_nodes : GeoDataFrame
+        GeoDataFrame containing the attributes and geometry of each
+        intermediate node.
     """
 
     records = []
@@ -494,6 +506,11 @@ def generate_crossing_graph(
     verbose : bool, default: False
         Whether to print updates and show progress bars while the graph is
         being generated.
+        
+    Returns
+    ---
+    crossing_graph : MultiDiGraph
+        The generated crossing graph.
     """
 
     if node_definitions is None:
