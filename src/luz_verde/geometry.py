@@ -16,26 +16,17 @@ def _segment_line(row: pd.Series):
     """
     Given a linear ring, a start point and an end point, takes the substring
     of the line that goes from the start point to the end point (projecting
-    the points onto the line if necessary). Takes the route that corresponds
-    to the route's "side" (clockwise around the ring if it's a clockwise
-    crossing or a left-side walk, counterclockwise if it's a counterclockwise
-    crossing or a right-side walk).
+    the points onto the line if necessary). Always takes the route increasing
+    from the start point to the end point, wrapping around the end/start of
+    the ring if necessary.
     """
 
     ring: LinearRing = row["geometry"]
-    # flip the ring if necessary
-    if (row["side"] in ["clockwise", "left"] and ring.is_ccw) or (
-        row["side"] in ["counterclockwise", "right"] and not ring.is_ccw
-    ):
-        ring = ring.reverse()
-
-    # i don't think this cast is necessary but better safe than sorry i guess
-    line: LineString = LineString(ring.coords)
 
     start_point = row["start_geom"]
     end_point = row["end_geom"]
-    start_proj = line.project(start_point)
-    end_proj = line.project(end_point)
+    start_proj = ring.project(start_point)
+    end_proj = ring.project(end_point)
 
     # if the projection degenerates into a single point, just connect the
     # start and end points with a straight line
@@ -44,12 +35,12 @@ def _segment_line(row: pd.Series):
 
     # "expected" case
     if start_proj < end_proj:
-        segment_coords = list(substring(line, start_proj, end_proj).coords)
+        segment_coords = list(substring(ring, start_proj, end_proj).coords)
 
     # wraparound case
     else:
-        seg1 = substring(line, start_proj, line.length)
-        seg2 = substring(line, 0, end_proj)
+        seg1 = substring(ring, start_proj, ring.length)
+        seg2 = substring(ring, 0, end_proj)
         segment_coords = list(seg1.coords) + list(seg2.coords)
 
     return remove_repeated_points(
@@ -104,9 +95,7 @@ def buffer_crossing_graph_geometry(
     if verbose:
         print("(2/2) Generating edge geometries...")
 
-    # buffer edges, assign the start and end points for each edge, and take
-    # the substring of the buffered edge that goes from the start to the end
-    # point
+    # buffer edges, assign the start and end points for each edge
     edges_buffered = gpd.GeoDataFrame(
         data=intermediate_edges["side"],
         geometry=intermediate_edges.buffer(buffer).exterior,
@@ -118,6 +107,20 @@ def buffer_crossing_graph_geometry(
         nodes_buffered.geometry, left_on="v", right_index=True
     )["geometry_y"]
 
+    # flip the ring if necessary, so that it increases in the same direction
+    # of the walk/cross
+    needs_flip = (
+        edges_buffered["side"].isin(["clockwise", "left"]) & edges_buffered.is_ccw
+    ) | (
+        edges_buffered["side"].isin(["counterclockwise", "right"])
+        & ~edges_buffered.is_ccw
+    )
+    edges_buffered.loc[needs_flip, "geometry"] = edges_buffered.loc[
+        needs_flip, "geometry"
+    ].map(lambda ring: ring.reverse())
+
+    # take the substring of the buffered edge that goes from the start to the
+    # end point
     if verbose:
         tqdm.pandas()
         edges_buffered.geometry = edges_buffered.progress_apply(_segment_line, axis=1)
