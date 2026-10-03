@@ -51,7 +51,6 @@ def _segment_line(row: pd.Series):
 def buffer_crossing_graph_geometry(
     crossing_graph: nx.MultiDiGraph,
     buffer: float = 1,
-    allow_double_buffer: bool = False,
     verbose: bool = False,
 ) -> nx.MultiDiGraph:
     """
@@ -64,7 +63,7 @@ def buffer_crossing_graph_geometry(
     """
 
     # check if the graph has already been buffered
-    if not allow_double_buffer and crossing_graph.graph.get("buffered"):
+    if crossing_graph.graph.get("buffered"):
         raise ValueError(
             "This graph's geometries have already been buffered. If you "
             "really wish to buffer them again, pass "
