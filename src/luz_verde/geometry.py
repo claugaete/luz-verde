@@ -54,7 +54,25 @@ def buffer_crossing_graph_geometry(
     verbose: bool = False,
 ) -> nx.MultiDiGraph:
     """
-    TODO
+    Buffers the geometries of the crossing graph. Does the following:
+    
+    - Moves each intermediate node `buffer` meters away from its base node,
+      using the angle calculated during graph generation.
+    - Buffers every edge `buffer` meters, and uses the buffered edge as a
+      reference to generate the new geometries for the intermediate edges
+      (connecting the new geometries of the intermediate nodes, while moving
+      along the buffered edge).
+      
+    Parameters
+    ---
+    crossing_graph : MultiDiGraph
+        The original crossing graph, obtained with `generate_crossing_graph`.
+    buffer : float, default: 1
+        The buffer distance in meters. Values that are too large might
+        generate weird geometries for some edges.
+    verbose : bool, default: False
+        Whether to print updates and show progress bars while the geometries
+        are being generated.
 
     Returns
     ---
