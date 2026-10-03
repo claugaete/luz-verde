@@ -67,7 +67,7 @@ def get_base_graph(
         positional arguments.
     cache_dir : Path, default: "cache"
         Path to save/load cached OSMnx downloads.
-        
+
     Returns
     ---
     base_graph : MultiDiGraph
@@ -335,7 +335,7 @@ def _generate_intermediate_nodes(
         The edges of the street network.
     show_progress : bool
         Whether to show a progress bar (using `tqdm`).
-        
+
     Returns
     ---
     intermediate_nodes : GeoDataFrame
@@ -448,7 +448,7 @@ def generate_crossing_graph(
     graph show all possible places in an intersection where a pedestrian can
     safely stand, and edges between these nodes show how a pedestrian might
     cross or walk along a street (when able).
-    
+
     Parameters
     ---
     base_graph : MultiDiGraph
@@ -457,7 +457,7 @@ def generate_crossing_graph(
         Dictionary defining which crossing types are considered "safe" (can
         always cross) and "unsafe" (can never cross). Other crossing types are
         considered "neutral" (can only cross if the road is not major).
-        
+
         The dictionary has two keys: `safe` and `unsafe`, and each value is a
         list of all crossing types belonging to that category. Possible
         crossing types are:
@@ -481,13 +481,13 @@ def generate_crossing_graph(
         parameter for more information); this last category should be reserved
         for roads that don't allow any high-speed traffic (e.g. pedestrian
         roads, service roads).
-        
+
         The dictionary has two keys: `major` and `minor`, and each value is a
         list of regex patterns; if a highway type matches with any of the
         regex patterns in the list, it will be considered of that group (e.g.
         `"major": ["primary"]` will consider both `primary` and `primary_link`
         as major roads).
-        
+
         By default, major roads contain `motor`, `primary`, `secondary` or
         `tertiary`, and minor roads contain `residential` or `cycleway`.
     unsafe_distance_from_signal : float, default: 20
@@ -506,7 +506,7 @@ def generate_crossing_graph(
     verbose : bool, default: False
         Whether to print updates and show progress bars while the graph is
         being generated.
-        
+
     Returns
     ---
     crossing_graph : MultiDiGraph
