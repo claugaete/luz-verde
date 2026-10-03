@@ -347,7 +347,7 @@ def _generate_intermediate_nodes(
     groupby = gdf_edges.reset_index().groupby("u")
     iterator = tqdm(groupby) if show_progress else groupby
     for name, group in iterator:
-        edges = group.sort_values("angle").reset_index(drop=True)
+        edges = group.sort_values("angle", ascending=False).reset_index(drop=True)
         n = len(edges)
 
         for i in range(n):
