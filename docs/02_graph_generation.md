@@ -95,8 +95,14 @@ area, which is not necessarily the case and might introduce routing errors
 crossings, inadvertently making you walk across roads it didn't know existed).
 Because of this, we will add an extra rule:
 
-> If $e$ and $f$ are two roads that belong to the boundary of the study area,
-> then no intermediate nodes will be created between $e$ and $f$.
+> If $u$ is a base node on the boundary of the study area, then no
+> intermediate nodes will be created around $u$.
+
+We will consider a base node $u$ to be on the boundary of the study area if
+its `street_count` attribute is different from its out-degree. OSMnx actually
+considers roads outside its boundaries for street counts, so a mismatch
+between these two values means there is an outgoing road from this node that
+is not present in the graph.
 
 ### Intersections near traffic signals
 
