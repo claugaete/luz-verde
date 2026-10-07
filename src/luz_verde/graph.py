@@ -259,7 +259,7 @@ def _get_walkable(edge: pd.Series) -> Literal["both", "left", "right", "neither"
         return "both"
 
     # motorways and cycleways are never walkable
-    if _match_road(edge["highway"], ["motor", "cycleway"]) or foot in (
+    if _match_road(edge["highway"], ["motorway", "trunk", "cycleway"]) or foot in (
         "no",
         "use_sidepath",
     ):
