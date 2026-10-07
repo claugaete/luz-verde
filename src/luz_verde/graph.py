@@ -5,7 +5,6 @@ graph.
 
 import re
 from collections.abc import Callable
-from copy import deepcopy
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -15,7 +14,6 @@ import numpy as np
 import osmnx as ox
 import pandas as pd
 from shapely import LineString
-from shapely.ops import polygonize
 from tqdm.auto import tqdm
 
 
@@ -92,8 +90,25 @@ def get_base_graph(
         loader_args = (loader_args,)
 
     street_graph = loader_fn(*loader_args, network_type="all", simplify=False)
+
+    # add attribute for nodes that are missing edges in their intersections
+    # (because those edges fall outside the polygon). it's important to set
+    # this flag before simplifying the graph
+    out_degree = dict(street_graph.out_degree())
+    nx.set_node_attributes(
+        street_graph,
+        {
+            n: True
+            for n, data in street_graph.nodes(data=True)
+            if out_degree[n] != data.get("street_count")
+        },
+        name="is_missing_edges",
+    )
+
     street_graph = ox.simplify_graph(
-        street_graph, edge_attrs_differ=["osmid"], node_attrs_include=["highway"]
+        street_graph,
+        edge_attrs_differ=["osmid"],
+        node_attrs_include=["highway", "is_missing_edges"],
     )
 
     return street_graph
@@ -346,14 +361,17 @@ def _generate_intermediate_nodes(
     records = []
     groupby = gdf_edges.reset_index().groupby("u")
     iterator = tqdm(groupby) if show_progress else groupby
-    for name, group in iterator:
+    for u, group in iterator:
+        
+        # skip node if it's on the edge
+        if not pd.isna(gdf_nodes.loc[u, "is_missing_edges"]):
+            continue
+        
         edges = group.sort_values("angle", ascending=False).reset_index(drop=True)
         n = len(edges)
 
         for i in range(n):
             left, right = edges.iloc[i], edges.iloc[(i + 1) % n]
-            if left.in_boundary and right.in_boundary:
-                continue
             # calculate intermediate angle
             angle_diff = (left.angle - right.angle) % (2 * np.pi)
             if angle_diff == 0:
@@ -363,7 +381,7 @@ def _generate_intermediate_nodes(
                 angle_mid = left.angle - angle_diff / 2
             records.append(
                 {
-                    "base_node": name,  # this is also u_left and u_right
+                    "base_node": u,  # this is also u_left and u_right
                     "v_left": left.v,
                     "key_left": left.key,
                     "v_right": right.v,
@@ -473,6 +491,7 @@ def generate_crossing_graph(
             - `none` (no markings, pedestrians may cross but don't have the
               right of way)
             - `no` (no crossing allowed under any circumstances)
+
         By default, `traffic_signals`, `uncontrolled` and `unmarked` are
         considered safe, while `no` is considered unsafe.
     edge_definitions : EdgeDefinitions
@@ -526,7 +545,7 @@ def generate_crossing_graph(
         print("(1/3) Calculating auxiliary variables...")
 
     # copy base graph (so we don't accidentally modify it)
-    base_graph = deepcopy(base_graph)
+    base_graph = base_graph.copy()
 
     df_nodes = pd.DataFrame.from_dict(dict(base_graph.nodes(data=True)), orient="index")
 
@@ -575,17 +594,6 @@ def generate_crossing_graph(
             "crossing",
         ] = "traffic_signals"
         gdf_nodes = gdf_nodes.drop(columns="is_marked")
-
-    # add attribute to identify edges that are on the outside border of the
-    # study area (no intermediate nodes will be generated between two edges on
-    # the boundary)
-    _, edges_undirected = ox.graph_to_gdfs(base_graph.to_undirected())
-    poly = polygonize(edges_undirected.geometry.union_all())
-    poly_gdf = gpd.GeoDataFrame(geometry=list(poly), crs=4326)
-    poly_boundary = poly_gdf.union_all().boundary
-    gdf_edges["in_boundary"] = gdf_edges.overlaps(poly_boundary) | gdf_edges.within(
-        poly_boundary
-    )
 
     # generate intermediate nodes
     if verbose:
