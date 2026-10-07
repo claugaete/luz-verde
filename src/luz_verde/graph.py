@@ -363,11 +363,10 @@ def _generate_intermediate_nodes(
     groupby = gdf_edges.reset_index().groupby("u")
     iterator = tqdm(groupby) if show_progress else groupby
     for u, group in iterator:
-        
         # skip node if it's on the edge
         if not pd.isna(gdf_nodes.loc[u, "is_missing_edges"]):
             continue
-        
+
         edges = group.sort_values("angle", ascending=False).reset_index(drop=True)
         n = len(edges)
 
@@ -575,6 +574,7 @@ def generate_crossing_graph(
         )
 
     gdf_nodes, gdf_edges = ox.graph_to_gdfs(base_graph)
+    del base_graph
     gdf_nodes["safety"] = _set_node_safety(gdf_nodes, node_definitions)
     gdf_edges["crossable"] = _set_edge_crossable(gdf_edges, edge_definitions["major"])
     gdf_edges["angle"] = gdf_edges.geometry.apply(_get_angle)
@@ -632,6 +632,7 @@ def generate_crossing_graph(
         side="left",
     )
     all_walks = pd.concat([right_side_walks, left_side_walks], ignore_index=True)
+    del left_side_walks, right_side_walks
     all_walks = _add_edge_data_to_joined_nodes(
         all_walks,
         gdf_edges,
@@ -668,6 +669,7 @@ def generate_crossing_graph(
         side="counterclockwise",
     )
     all_crosses = pd.concat([cw_crosses, ccw_crosses], ignore_index=True)
+    del cw_crosses, ccw_crosses
     # add base node data (we will need it to determine which crossing spots
     # are valid)
     all_crosses = all_crosses.merge(
@@ -718,6 +720,7 @@ def generate_crossing_graph(
         .assign(key=lambda gdf: gdf.groupby(["u", "v"]).cumcount())
         .set_index(["u", "v", "key"])
     )
+    del all_walks, all_crosses
 
     # drop edges where origin and destination are the same (useless!)
     intermediate_edges = intermediate_edges[
