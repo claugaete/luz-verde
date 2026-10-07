@@ -45,9 +45,9 @@ def get_base_graph(
     cache_dir: Path = "cache",
 ) -> nx.MultiDiGraph:
     """
-    Uses OSMnx to download the base graph with all streets and crossings for a
-    certain region. This graph will be used to generate a new graph where
-    movement is only possible along "safe" crossings.
+    Uses OSMnx to download the base graph with all public streets and
+    crossings for a certain region. This graph will be used to generate a new
+    graph where movement is only possible along "safe" crossings.
 
     Parameters
     ---
@@ -79,12 +79,12 @@ def get_base_graph(
         "foot",
     ]
     ox.settings.cache_folder = cache_dir
-    ox.settings.bidirectional_network_types.append("all")
+    ox.settings.bidirectional_network_types.append("all_public")
 
     if not isinstance(loader_args, tuple):
         loader_args = (loader_args,)
 
-    street_graph = loader_fn(*loader_args, network_type="all", simplify=False)
+    street_graph = loader_fn(*loader_args, network_type="all_public", simplify=False)
 
     # add attribute for nodes that are missing edges in their intersections
     # (because those edges fall outside the polygon). it's important to set
