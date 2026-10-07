@@ -728,9 +728,9 @@ def generate_crossing_graph(
         != intermediate_edges.index.get_level_values(1)
     ]
 
-    # generate new graph and remove isolate nodes (useless!)
+    # generate new graph and only keep largest component
     new_graph = ox.graph_from_gdfs(intermediate_nodes, intermediate_edges)
-    new_graph.remove_nodes_from(list(nx.isolates(new_graph)))
+    new_graph = ox.truncate.largest_component(new_graph, strongly=False)
 
     if verbose:
         print("Graph generated.")
