@@ -27,12 +27,6 @@ class NodeDefinitions(TypedDict):
     unsafe: list[str]
 
 
-class IntermediateNodeData(TypedDict): ...
-
-
-class IntermediateEdgeData(TypedDict): ...
-
-
 DEFAULT_ROAD_DEFINITIONS: NodeDefinitions = {
     "major": ["motorway", "trunk", "primary", "secondary", "tertiary", "busway"],
     "minor": ["residential", "unclassified", "cycleway"],
