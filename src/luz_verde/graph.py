@@ -34,8 +34,9 @@ class IntermediateEdgeData(TypedDict): ...
 
 
 DEFAULT_ROAD_DEFINITIONS: NodeDefinitions = {
-    "major": ["motor", "primary", "secondary", "tertiary"],
-    "minor": ["residential", "cycleway"],
+    "major": ["motorway", "trunk", "primary", "secondary", "tertiary", "busway"],
+    "minor": ["residential", "unclassified", "cycleway"],
+    "pedestrian": ["footway", "pedestrian", "path", "steps", "corridor"],
 }
 
 DEFAULT_CROSSING_DEFINITIONS: EdgeDefinitions = {
@@ -511,8 +512,9 @@ def generate_crossing_graph(
         `"major": ["primary"]` will consider both `primary` and `primary_link`
         as major roads).
 
-        By default, major roads contain `motor`, `primary`, `secondary` or
-        `tertiary`, and minor roads contain `residential` or `cycleway`.
+        By default, major roads contain `motorway`, `trunk`, `primary`,
+        `secondary`, `tertiary` or `busway`, and minor roads contain
+        `residential`, `unclassified` or `cycleway`.
     unsafe_distance_from_signal : float, default: 20
         Crossings that are at most this distance away from a traffic signal
         will be deemed unsafe, unless they were previously deemed safe. This
