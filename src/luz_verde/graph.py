@@ -338,11 +338,12 @@ def _generate_intermediate_nodes_and_crossings(
     show_progress: bool,
 ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """
-    TODO: fix docs to match new behavior
-
-    For every node `u` in `gdf_nodes`, generates an intermediate node between
-    each pair of adjacent outgoing edges from `u`, saving the edges and the
-    intermediate angle between them as node attributes.
+    For every node `u` in `gdf_nodes`, generates intermediate nodes in the
+    places where a pedestrian could stand (either on a pedestrian way, or
+    between two non-pedestrian ways). Connects these new intermediate nodes
+    with crossings between them (where allowed), and also sets the
+    intermediate nodes to the left and right of each way (modifying the
+    `left_node` and `right_node` attributes of `gdf_edges`).
 
     Parameters
     ---
@@ -358,6 +359,8 @@ def _generate_intermediate_nodes_and_crossings(
     intermediate_nodes : GeoDataFrame
         GeoDataFrame containing the attributes and geometry of each
         intermediate node.
+    crossings : GeoDataFrame
+        GeoDataFrame containing the attributes and geometry of each crossing.
     """
 
     node_records = []
