@@ -54,7 +54,7 @@ class _CcwCrossingRecord:
 
 DEFAULT_ROAD_DEFINITIONS: NodeDefinitions = {
     "major": ["motorway", "trunk", "primary", "secondary", "tertiary", "busway"],
-    "minor": ["residential", "unclassified", "cycleway"],
+    "minor": ["residential", "unclassified"],
     "pedestrian": ["footway", "pedestrian", "path", "steps", "corridor"],
 }
 
@@ -624,7 +624,7 @@ def generate_crossing_graph(
 
         By default, major roads contain `motorway`, `trunk`, `primary`,
         `secondary`, `tertiary` or `busway`, and minor roads contain
-        `residential`, `unclassified` or `cycleway`.
+        `residential` or `unclassified`.
     unsafe_distance_from_signal : float, default: 20
         Crossings that are at most this distance away from a traffic signal
         will be deemed unsafe, unless they were previously deemed safe. This

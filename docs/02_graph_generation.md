@@ -11,16 +11,16 @@ not write $k$ to reduce cluttering, but do remember that it exists to
 differentiate road segments with the same origin and destination.
 
 We will divide road types into the following categories:
-- Major roads: motorways and trunk roads; primary, secondary and tertiary roads. These have
-  significant vehicular flow, and so should not be crossed unless explicitly
-  allowed.
-- Minor roads: Residential roads and cycleways. These have a lower vehicular
-  flow, and so can be crossed unless it is specifically disallowed.
+- Major roads: motorways and trunk roads; primary, secondary and tertiary
+  roads. These have significant vehicular flow, and so should not be crossed
+  unless explicitly allowed.
+- Minor roads: Residential and unclassified roads. These have a lower
+  vehicular flow, and so can be crossed unless it is specifically disallowed.
 - Pedestrian roads: places where a pedestrian is meant to walk on, not next
   to. This includes sidewalks when mapped separately from the road. They can
   also always be crossed, unless specifically disallowed.
-- Service roads, living roads, and others. These are assumed to have no
-  high-speed vehicular flow; they are treated like minor roads, with some
+- Service roads, living roads, cycleways and others. These are assumed to have
+  no high-speed vehicular flow; they are treated like minor roads, with some
   exceptions (see [Intersections near traffic
   signals](#intersections-near-traffic-signals)).
 
