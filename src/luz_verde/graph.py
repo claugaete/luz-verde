@@ -68,6 +68,7 @@ def get_base_graph(
     loader_args,
     loader_fn: Callable[..., nx.MultiDiGraph] = ox.graph_from_polygon,
     cache_dir: Path = "cache",
+    verbose: bool = False
 ) -> nx.MultiDiGraph:
     """
     Uses OSMnx to download the base graph with all public streets and
@@ -85,6 +86,8 @@ def get_base_graph(
         positional arguments.
     cache_dir : Path, default: "cache"
         Path to save/load cached OSMnx downloads.
+    verbose : bool, default: False
+        Whether to print updates while the graph is being loaded.
 
     Returns
     ---
@@ -108,6 +111,9 @@ def get_base_graph(
 
     if not isinstance(loader_args, tuple):
         loader_args = (loader_args,)
+    
+    if verbose:
+        print("(1/2) Downloading street network...")
 
     street_graph = loader_fn(*loader_args, network_type="all_public", simplify=False)
 
@@ -124,12 +130,22 @@ def get_base_graph(
         },
         name="is_missing_edges",
     )
+    
+    if verbose:
+        print("(2/2) Simplifying graph...")
 
     street_graph = ox.simplify_graph(
         street_graph,
         edge_attrs_differ=["osmid"],
         node_attrs_include=["highway", "is_missing_edges"],
     )
+    
+    if verbose:
+        print(
+            "Graph loaded, "
+            f"{street_graph.number_of_nodes()} nodes, "
+            f"{street_graph.number_of_edges()} edges."
+        )
 
     return street_graph
 
@@ -831,6 +847,10 @@ def generate_crossing_graph(
     new_graph = ox.truncate.largest_component(new_graph, strongly=False)
 
     if verbose:
-        print("Graph generated.")
+        print(
+            "Graph generated, "
+            f"{new_graph.number_of_nodes()} nodes, "
+            f"{new_graph.number_of_edges()} edges."
+        )
 
     return new_graph
