@@ -14,33 +14,44 @@ from tqdm.auto import tqdm
 
 def _segment_line(row: pd.Series):
     """
-    Given a linear ring, a start point and an end point, takes the substring
-    of the line that goes from the start point to the end point (projecting
-    the points onto the line if necessary). Always takes the route increasing
-    from the start point to the end point, wrapping around the end/start of
-    the ring if necessary.
+    Given a line string or a linear ring, a start point and an end point,
+    takes the substring of the line that goes from the start point to the end
+    point.
+
+    If it's a line string, assumes that the start and end point are on the
+    line itself.
+
+    If it's a ring, always takes the route increasing from the start point to
+    the end point, wrapping around the end/start of the ring if necessary.
+    Also projects the points onto the ring if necessary, connecting the actual
+    start/end with the projected start/end using straight lines.
     """
 
-    ring: LinearRing = row["geometry"]
+    line: LineString | LinearRing = row["geometry"]
 
     start_point = row["start_geom"]
     end_point = row["end_geom"]
-    start_proj = ring.project(start_point)
-    end_proj = ring.project(end_point)
+    start_proj = line.project(start_point)
+    end_proj = line.project(end_point)
 
     # if the projection degenerates into a single point, just connect the
     # start and end points with a straight line
     if start_proj == end_proj:
         return LineString([start_point, end_point])
 
+    # if it's a line string, then just return the substring
+    if line.geom_type == "LineString":
+        return substring(line, start_proj, end_proj)
+
+    # now we assume we are working with a ring
     # "expected" case
     if start_proj < end_proj:
-        segment_coords = list(substring(ring, start_proj, end_proj).coords)
+        segment_coords = list(substring(line, start_proj, end_proj).coords)
 
     # wraparound case
     else:
-        seg1 = substring(ring, start_proj, ring.length)
-        seg2 = substring(ring, 0, end_proj)
+        seg1 = substring(line, start_proj, line.length)
+        seg2 = substring(line, 0, end_proj)
         segment_coords = list(seg1.coords) + list(seg2.coords)
 
     return remove_repeated_points(
@@ -57,9 +68,15 @@ def buffer_crossing_graph_geometry(
     Buffers the geometries of the crossing graph. Does the following:
 
     - Moves each intermediate node `buffer` meters away from its base node,
-      using the angle calculated during graph generation.
-    - Buffers every edge `buffer` meters, and uses the buffered edge as a
-      reference to generate the new geometries for the intermediate edges
+      using the angle calculated during graph generation. If the angle is NaN
+      (because the intersection contains only pedestrian roads and consists of
+      a single intermediate node), then the intermediate node is kept in the
+      same position as the original base node.
+    - For crossings, connects the start and end nodes with a straight line.
+    - For walks along pedestrian roads, connects the start and end points
+      along the road itself.
+    - For walks along non-pedestrian roads, buffers the edge `buffer` meters,
+      and uses the buffered edge as a reference to generate the new geometry
       (connecting the new geometries of the intermediate nodes, while moving
       along the buffered edge).
 
@@ -82,11 +99,7 @@ def buffer_crossing_graph_geometry(
 
     # check if the graph has already been buffered
     if crossing_graph.graph.get("buffered"):
-        raise ValueError(
-            "This graph's geometries have already been buffered. If you "
-            "really wish to buffer them again, pass "
-            "`allow_double_buffer=True`."
-        )
+        raise ValueError("This graph's geometries have already been buffered.")
 
     intermediate_nodes, intermediate_edges = ox.graph_to_gdfs(crossing_graph)
 
@@ -100,10 +113,12 @@ def buffer_crossing_graph_geometry(
 
     # move the nodes `buffer` meters away from the center, according to the
     # angle calculated during graph computation
+    dx = (np.cos(intermediate_nodes.angle) * buffer).fillna(0)
+    dy = (np.sin(intermediate_nodes.angle) * buffer).fillna(0)
     nodes_buffered = gpd.GeoDataFrame(
         geometry=gpd.points_from_xy(
-            x=intermediate_nodes.geometry.x + buffer * np.cos(intermediate_nodes.angle),
-            y=intermediate_nodes.geometry.y + buffer * np.sin(intermediate_nodes.angle),
+            x=intermediate_nodes.geometry.x + dx,
+            y=intermediate_nodes.geometry.y + dy,
             crs=proj_crs,
         ),
         index=intermediate_nodes.index,
@@ -113,10 +128,7 @@ def buffer_crossing_graph_geometry(
         print("(2/2) Generating edge geometries...")
 
     # buffer edges, assign the start and end points for each edge
-    edges_buffered = gpd.GeoDataFrame(
-        data=intermediate_edges["side"],
-        geometry=intermediate_edges.buffer(buffer).exterior,
-    )
+    edges_buffered = intermediate_edges[["type", "side", "geometry"]].copy()
     edges_buffered["start_geom"] = edges_buffered.merge(
         nodes_buffered.geometry, left_on="u", right_index=True
     )["geometry_y"]
@@ -124,9 +136,21 @@ def buffer_crossing_graph_geometry(
         nodes_buffered.geometry, left_on="v", right_index=True
     )["geometry_y"]
 
-    # flip the ring if necessary, so that it increases in the same direction
-    # of the walk/cross
-    needs_flip = (
+    crosses_mask = edges_buffered["type"] == "cross"
+    walks_mask = edges_buffered["type"] == "walk"
+    non_pedestrian_walks_mask = walks_mask & (edges_buffered["side"] != "center")
+
+    # for crosses, connect with a straight line
+    edges_buffered.loc[crosses_mask, "geometry"] = edges_buffered.loc[
+        crosses_mask
+    ].apply(lambda row: LineString([row["start_geom"], row["end_geom"]]), axis=1)
+
+    edges_buffered.loc[non_pedestrian_walks_mask, "geometry"] = (
+        edges_buffered.loc[non_pedestrian_walks_mask, "geometry"]
+        .buffer(buffer)
+        .exterior
+    )
+    needs_flip = non_pedestrian_walks_mask & (
         edges_buffered["side"].isin(["clockwise", "left"]) & edges_buffered.is_ccw
     ) | (
         edges_buffered["side"].isin(["counterclockwise", "right"])
@@ -136,13 +160,16 @@ def buffer_crossing_graph_geometry(
         needs_flip, "geometry"
     ].map(lambda ring: ring.reverse())
 
-    # take the substring of the buffered edge that goes from the start to the
-    # end point
+    # segment the edges for walks between the start and end node
     if verbose:
         tqdm.pandas()
-        edges_buffered.geometry = edges_buffered.progress_apply(_segment_line, axis=1)
+        edges_buffered.loc[walks_mask, "geometry"] = edges_buffered.loc[
+            walks_mask
+        ].progress_apply(_segment_line, axis=1)
     else:
-        edges_buffered.geometry = edges_buffered.apply(_segment_line, axis=1)
+        edges_buffered.loc[walks_mask, "geometry"] = edges_buffered.loc[
+            walks_mask
+        ].apply(_segment_line, axis=1)
 
     # calculate length for edges (projected) and coordinates for nodes
     # (unprojected)

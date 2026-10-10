@@ -5,6 +5,7 @@ graph.
 
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -13,18 +14,42 @@ import networkx as nx
 import numpy as np
 import osmnx as ox
 import pandas as pd
-from shapely import LineString
+from shapely import LineString, Point
 from tqdm.auto import tqdm
 
 
 class EdgeDefinitions(TypedDict):
     major: list[str]
     minor: list[str]
+    pedestrian: list[str]
 
 
 class NodeDefinitions(TypedDict):
     safe: list[str]
     unsafe: list[str]
+
+
+@dataclass
+class _IntermediateNodeRecord:
+    index: int
+    base_node: int
+    angle: float = np.nan
+
+
+@dataclass
+class _CcwCrossingRecord:
+    u: int
+    v: int
+    edge_osmid: int
+    edge_highway: str
+    edge_name: str
+    edge_crossable: bool
+    edge_walkable: str
+    node_crossing: str
+    node_safety: str
+    geometry: Point
+    type: str = "cross"
+    side: str = "counterclockwise"
 
 
 DEFAULT_ROAD_DEFINITIONS: NodeDefinitions = {
@@ -238,7 +263,9 @@ def _get_angle(geometry: LineString) -> float:
     return np.arctan2(p1[1] - p0[1], p1[0] - p0[0])
 
 
-def _get_walkable(edge: pd.Series) -> Literal["both", "left", "right", "neither"]:
+def _get_walkable(
+    edge: pd.Series, pedestrian_pats: list[str]
+) -> Literal["both", "left", "right", "neither"]:
     """
     Returns which sides an edge/road is walkable along. Can be either "both",
     "left", "right" or "neither".
@@ -252,7 +279,7 @@ def _get_walkable(edge: pd.Series) -> Literal["both", "left", "right", "neither"
     foot = edge["foot"]
 
     # designated footpaths are always walkable on both sides
-    if _match_road(edge["highway"], ["footway", "pedestrian"]) or foot in (
+    if _match_road(edge["highway"], pedestrian_pats) or foot in (
         "yes",
         "designated",
     ):
@@ -329,13 +356,55 @@ def _set_edge_crossable(
     )
 
 
-def _generate_intermediate_nodes(
-    gdf_nodes: gpd.GeoDataFrame, gdf_edges: gpd.GeoDataFrame, show_progress: bool
-) -> gpd.GeoDataFrame:
+def _is_crossing_allowed(u_data: pd.Series, right_edge: pd.Series) -> bool:
+    """Returns whether you can cross `right_edge` along `u_data`."""
+    return (u_data["safety"] == "safe") or (
+        right_edge.crossable and u_data["safety"] != "unsafe"
+    )
+
+
+def _make_crossing(
+    u_node: int,
+    v_node: int,
+    right_edge: pd.Series,
+    u_data: pd.Series,
+) -> _CcwCrossingRecord:
+    return _CcwCrossingRecord(
+        u=u_node,
+        v=v_node,
+        edge_osmid=right_edge.osmid,
+        edge_highway=right_edge.highway,
+        edge_name=right_edge["name"],
+        edge_crossable=right_edge.crossable,
+        edge_walkable=right_edge.walkable,
+        node_crossing=u_data["crossing"],
+        node_safety=u_data["safety"],
+        geometry=u_data["geometry"],
+    )
+
+
+def _midpoint_angle(left_angle: float, right_angle: float) -> float:
+    """Returns the angle bisector between two edge angles
+    (counterclockwise)."""
+    angle_diff = (left_angle - right_angle) % (2 * np.pi)
+    if angle_diff == 0:
+        # edge case for one-way streets
+        return left_angle + np.pi
+    return left_angle - angle_diff / 2
+
+
+def _generate_intermediate_nodes_and_crossings(
+    gdf_nodes: gpd.GeoDataFrame,
+    gdf_edges: gpd.GeoDataFrame,
+    show_progress: bool,
+) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """
-    For every node `u` in `gdf_nodes`, generates an intermediate node between
-    each pair of adjacent outgoing edges from `u`, saving the edges and the
-    intermediate angle between them as node attributes.
+    For every node `u` in `gdf_nodes`, generates intermediate nodes in the
+    places where a pedestrian could stand (either on a pedestrian way, or
+    between two non-pedestrian ways). Connects these new intermediate nodes
+    with crossings between them (where allowed), and also sets the
+    intermediate nodes to the left and right of each way (modifying the
+    `left_node` and `right_node` attributes of `gdf_edges`).
 
     Parameters
     ---
@@ -351,40 +420,110 @@ def _generate_intermediate_nodes(
     intermediate_nodes : GeoDataFrame
         GeoDataFrame containing the attributes and geometry of each
         intermediate node.
+    crossings : GeoDataFrame
+        GeoDataFrame containing the attributes and geometry of each crossing.
     """
 
-    records = []
-    groupby = gdf_edges.reset_index().groupby("u")
+    node_records: list[_IntermediateNodeRecord] = []
+    crossing_records: list[_CcwCrossingRecord] = []
+    idx = 0
+
+    groupby = gdf_edges.groupby("u")
     iterator = tqdm(groupby) if show_progress else groupby
+
     for u, group in iterator:
-        # skip node if it's on the edge
-        if not pd.isna(gdf_nodes.loc[u, "is_missing_edges"]):
+        u_data = gdf_nodes.loc[u]
+
+        # skip node if it's on the boundary
+        if not pd.isna(u_data["is_missing_edges"]):
             continue
 
-        edges = group.sort_values("angle", ascending=False).reset_index(drop=True)
+        # if it's all pedestrian roads and the crossing has no specific tag,
+        # then simplify to just one intermediate node
+        if group["is_pedestrian"].all() and u_data["crossing"] == "none":
+            node_records.append(_IntermediateNodeRecord(index=idx, base_node=u))
+            gdf_edges.loc[group.index, ["left_node", "right_node"]] = idx
+            idx += 1
+            continue
+
+        edges = group.sort_values("angle")
         n = len(edges)
+        previous_node: int = -1
+        crossing_with_missing_u: _CcwCrossingRecord | None = None
+        edge_with_missing_right_walk: tuple[int, int, int] | None = None
 
         for i in range(n):
-            left, right = edges.iloc[i], edges.iloc[(i + 1) % n]
-            # calculate intermediate angle
-            angle_diff = (left.angle - right.angle) % (2 * np.pi)
-            if angle_diff == 0:
-                # edge case for one-way streets
-                angle_mid = left.angle + np.pi
-            else:
-                angle_mid = left.angle - angle_diff / 2
-            records.append(
-                {
-                    "base_node": u,  # this is also u_left and u_right
-                    "v_left": left.v,
-                    "key_left": left.key,
-                    "v_right": right.v,
-                    "key_right": right.key,
-                    "angle": angle_mid,
-                }
-            )
+            right, left = edges.iloc[i], edges.iloc[(i + 1) % n]
 
-    new_nodes_df = pd.DataFrame(records)
+            if left.is_pedestrian:
+                # place a node ON the pedestrian road
+                node_records.append(
+                    _IntermediateNodeRecord(index=idx, base_node=u, angle=left.angle)
+                )
+
+                # cross over the right-side road (if allowed)
+                if _is_crossing_allowed(u_data, right):
+                    new_crossing = _make_crossing(previous_node, idx, right, u_data)
+                    crossing_records.append(new_crossing)
+                    if previous_node == -1:
+                        crossing_with_missing_u = new_crossing
+
+                # this is actually a "center-walk" (because the left edge is
+                # pedestrian, we walk ON it not next to it), but we save it in
+                # the right and left nodes to save a column
+                gdf_edges.loc[left.name, ["left_node", "right_node"]] = idx
+
+                if (not right.is_pedestrian) and (right.walkable in ("left", "both")):
+                    gdf_edges.loc[right.name, "left_node"] = idx
+
+                previous_node = idx
+                idx += 1
+
+            elif right.is_pedestrian:
+                # skip intermediate node, simply connect the existing ones
+                if left.walkable in ("right", "both"):
+                    gdf_edges.loc[left.name, "right_node"] = previous_node
+                    if previous_node == -1:
+                        edge_with_missing_right_walk = left.name
+
+            else:
+                # both edges are non-pedestrian: add intermediate node between
+                # them
+                node_records.append(
+                    _IntermediateNodeRecord(
+                        index=idx,
+                        base_node=u,
+                        angle=_midpoint_angle(left.angle, right.angle),
+                    )
+                )
+                if _is_crossing_allowed(u_data, right) and left.name != right.name:
+                    new_crossing = _make_crossing(previous_node, idx, right, u_data)
+                    crossing_records.append(new_crossing)
+                    if previous_node == -1:
+                        crossing_with_missing_u = new_crossing
+                if left.walkable in ("right", "both"):
+                    gdf_edges.loc[left.name, "right_node"] = idx
+                if right.walkable in ("left", "both"):
+                    gdf_edges.loc[right.name, "left_node"] = idx
+                previous_node = idx
+                idx += 1
+
+        # final fixes (closing the loop)
+        if crossing_with_missing_u is not None:
+            crossing_with_missing_u.u = previous_node
+        if edge_with_missing_right_walk is not None:
+            gdf_edges.loc[edge_with_missing_right_walk, "right_node"] = previous_node
+
+    return _build_node_gdf(node_records, gdf_nodes), _build_crossing_gdf(
+        crossing_records, gdf_nodes
+    )
+
+
+def _build_node_gdf(
+    node_records: list[_IntermediateNodeRecord],
+    gdf_nodes: gpd.GeoDataFrame,
+) -> gpd.GeoDataFrame:
+    new_nodes_df = pd.DataFrame(vars(r) for r in node_records)
     return (
         gpd.GeoDataFrame(
             new_nodes_df,
@@ -399,56 +538,18 @@ def _generate_intermediate_nodes(
     )
 
 
-def _join_nodes(
-    origin_nodes: gpd.GeoDataFrame,
-    destination_nodes: gpd.GeoDataFrame,
-    join_left: list[str],
-    join_right: list[str],
-    join_type: str,
-    side: str,
+def _build_crossing_gdf(
+    crossing_records: list[_CcwCrossingRecord],
+    gdf_nodes: gpd.GeoDataFrame,
 ) -> gpd.GeoDataFrame:
-    """
-    Merge nodes that share an edge on a given side. Keeps edge identifiers
-    from the origin nodes.
-
-    `origin_nodes` must have an `origin` column (or axis), `destination_nodes`
-    must have a `destination` column (or axis), and `join_left` and
-    `join_right` must not share values in common.
-    """
-
-    edge_cols = ["u_base", "v_base", "key_base"]
-
+    crossings_df = pd.DataFrame(vars(r) for r in crossing_records)
     return (
-        origin_nodes[["origin", *join_left]]
-        .merge(
-            destination_nodes[["destination", *join_right]],
-            left_on=join_left,
-            right_on=join_right,
-            how="inner",
-        )[["origin", "destination", *join_left]]
-        .rename(columns=dict(zip(join_left, edge_cols)))
-        .assign(type=join_type, side=side)
-    )
-
-
-def _add_edge_data_to_joined_nodes(
-    joined_nodes: pd.DataFrame, gdf_edges: gpd.GeoDataFrame, columns: list[str]
-) -> gpd.GeoDataFrame:
-    """
-    Merges joined nodes with data from `gdf_edges` and returns a GeoDataFrame.
-    """
-
-    return gpd.GeoDataFrame(
-        (
-            joined_nodes.merge(
-                gdf_edges[columns],
-                left_on=["u_base", "v_base", "key_base"],
-                right_index=True,
-            )
-        ),
-        geometry="geometry",
-        crs=gdf_edges.crs,
-    )
+        gpd.GeoDataFrame(
+            crossings_df,
+            geometry="geometry",
+            crs=gdf_nodes.crs,
+        )
+    ).assign(length=0.1)
 
 
 def generate_crossing_graph(
@@ -572,7 +673,13 @@ def generate_crossing_graph(
     gdf_nodes["safety"] = _set_node_safety(gdf_nodes, node_definitions)
     gdf_edges["crossable"] = _set_edge_crossable(gdf_edges, edge_definitions["major"])
     gdf_edges["angle"] = gdf_edges.geometry.apply(_get_angle)
-    gdf_edges["walkable"] = gdf_edges.apply(_get_walkable, axis=1)
+    gdf_edges["walkable"] = gdf_edges.apply(
+        _get_walkable, args=(edge_definitions["pedestrian"],), axis=1
+    )
+    gdf_edges["is_pedestrian"] = gdf_edges["highway"].str.match(
+        "|".join(edge_definitions["pedestrian"])
+    )
+    gdf_edges[["left_node", "right_node"]] = np.nan
 
     # nodes that are near traffic signals and aren't explicitly safe are
     # deemed unsafe
@@ -591,103 +698,90 @@ def generate_crossing_graph(
         ] = "traffic_signals"
         gdf_nodes = gdf_nodes.drop(columns="is_marked")
 
-    # generate intermediate nodes
+    # generate intermediate nodes and crossings
     if verbose:
-        print("(2/3) Generating intermediate nodes...")
-    intermediate_nodes = _generate_intermediate_nodes(
+        print("(2/3) Generating intermediate nodes and crossings...")
+    intermediate_nodes, ccw_crosses = _generate_intermediate_nodes_and_crossings(
         gdf_nodes, gdf_edges, show_progress=verbose
     )
+    all_crosses = pd.concat(
+        [
+            ccw_crosses,
+            ccw_crosses.rename(columns={"u": "v", "v": "u"}).assign(side="clockwise"),
+        ]
+    )
+    all_crosses = all_crosses.drop_duplicates(subset=["u", "v"])
+    del ccw_crosses
 
-    # GENERATE CONNECTIONS BETWEEN INTERMEDIATE NODES
+    # generate walks
     if verbose:
-        print("(3/3) Generating intermediate edges...")
-    origin_nodes = intermediate_nodes.rename_axis("origin").reset_index()
-    destination_nodes = (
-        intermediate_nodes.rename_axis("destination")
-        .reset_index()
-        .rename(columns={"base_node": "base_node_dest"})
-    )
+        print("(3/3) Generating walks along roads...")
 
-    # 1. walking along an edge
-    right_side_walks = _join_nodes(
-        origin_nodes,
-        destination_nodes,
-        join_left=["base_node", "v_left", "key_left"],
-        join_right=["v_right", "base_node_dest", "key_right"],
-        join_type="walk",
-        side="right",
+    # right-side walks
+    right_side_walks = (
+        gdf_edges.loc[
+            gdf_edges["right_node"].notna(),
+            [
+                "right_node",
+                "osmid",
+                "highway",
+                "name",
+                "crossable",
+                "walkable",
+                "geometry",
+                "is_pedestrian",
+                "length",
+            ],
+        ]
+        .merge(
+            gdf_edges.loc[gdf_edges["left_node"].notna(), ["left_node"]],
+            left_on=["u", "v", "key"],
+            right_on=["v", "u", "key"],
+        )
+        .rename(columns={"right_node": "u", "left_node": "v"})
     )
-    left_side_walks = _join_nodes(
-        origin_nodes,
-        destination_nodes,
-        join_left=["base_node", "v_right", "key_right"],
-        join_right=["v_left", "base_node_dest", "key_left"],
-        join_type="walk",
-        side="left",
+    right_side_walks[["type", "side"]] = ("walk", "right")
+
+    # right-side walks along pedestrian roads are actually center walks
+    right_side_walks.loc[right_side_walks["is_pedestrian"], "side"] = "center"
+
+    # left-side walks
+    left_side_walks = (
+        gdf_edges.loc[
+            ~gdf_edges["is_pedestrian"] & gdf_edges["left_node"].notna(),
+            [
+                "left_node",
+                "osmid",
+                "highway",
+                "name",
+                "crossable",
+                "walkable",
+                "geometry",
+                "length",
+            ],
+        ]
+        .merge(
+            gdf_edges.loc[gdf_edges["right_node"].notna(), ["right_node"]],
+            left_on=["u", "v", "key"],
+            right_on=["v", "u", "key"],
+        )
+        .rename(columns={"left_node": "u", "right_node": "v"})
     )
+    left_side_walks[["type", "side"]] = ("walk", "left")
+
+    # concatenate left, center and right-side walks
     all_walks = pd.concat([right_side_walks, left_side_walks], ignore_index=True)
+    all_walks[["u", "v"]] = all_walks[["u", "v"]].astype(int)
+    all_walks = all_walks.rename(
+        columns={
+            "osmid": "edge_osmid",
+            "highway": "edge_highway",
+            "name": "edge_name",
+            "crossable": "edge_crossable",
+            "walkable": "edge_walkable",
+        }
+    ).drop(columns="is_pedestrian")
     del left_side_walks, right_side_walks
-    all_walks = _add_edge_data_to_joined_nodes(
-        all_walks,
-        gdf_edges,
-        columns=[
-            "osmid",
-            "highway",
-            "name",
-            "length",
-            "crossable",
-            "walkable",
-            "geometry",
-        ],
-    )
-    # the side we are walking on must be deemed walkable
-    all_walks = all_walks[
-        (all_walks["walkable"] == "both") | (all_walks["walkable"] == all_walks["side"])
-    ]
-
-    # 2. crossing an edge along a base node
-    cw_crosses = _join_nodes(
-        origin_nodes,
-        destination_nodes,
-        join_left=["base_node", "v_right", "key_right"],
-        join_right=["base_node_dest", "v_left", "key_left"],
-        join_type="cross",
-        side="clockwise",
-    )
-    ccw_crosses = _join_nodes(
-        origin_nodes,
-        destination_nodes,
-        join_left=["base_node", "v_left", "key_left"],
-        join_right=["base_node_dest", "v_right", "key_right"],
-        join_type="cross",
-        side="counterclockwise",
-    )
-    all_crosses = pd.concat([cw_crosses, ccw_crosses], ignore_index=True)
-    del cw_crosses, ccw_crosses
-    # add base node data (we will need it to determine which crossing spots
-    # are valid)
-    all_crosses = all_crosses.merge(
-        gdf_nodes[["crossing", "safety", "geometry"]],
-        left_on="u_base",
-        right_index=True,
-    ).assign(length=0.1)
-    all_crosses = _add_edge_data_to_joined_nodes(
-        all_crosses,
-        gdf_edges,
-        columns=[
-            "osmid",
-            "highway",
-            "name",
-            "crossable",
-            "walkable",
-        ],
-    )
-    # if the edge is crossable, then we can cross unless the node is unsafe;
-    # if the edge is uncrossable, then we can only cross if the node is safe
-    all_crosses = all_crosses[
-        (all_crosses["safety"] == "safe")
-        | (all_crosses["crossable"] & (all_crosses["safety"] != "unsafe"))
-    ]
 
     # consolidate intermediate edges (walks + crosses)
     intermediate_edges = (
@@ -696,27 +790,37 @@ def generate_crossing_graph(
             geometry="geometry",
             crs=all_crosses.crs,
         )
-        # rename columns and add a new "key" for duplicate u, v pairs (so that
-        # osmnx accepts this graph as valid)
-        .rename(
-            columns={
-                "origin": "u",
-                "destination": "v",
-                "osmid": "edge_osmid",
-                "highway": "edge_highway",
-                "name": "edge_name",
-                "crossable": "edge_crossable",
-                "walkable": "edge_walkable",
-                "crossing": "node_crossing",
-                "safety": "node_safety",
-            }
-        )
+        # add a new "key" for duplicate u, v pairs (so that osmnx accepts this
+        # graph as valid)
         .assign(key=lambda gdf: gdf.groupby(["u", "v"]).cumcount())
         .set_index(["u", "v", "key"])
+        .reindex(
+            columns=[
+                "type",
+                "side",
+                "edge_osmid",
+                "edge_highway",
+                "edge_name",
+                "edge_crossable",
+                "edge_walkable",
+                "node_crossing",
+                "node_safety",
+                "length",
+                "geometry",
+            ]
+        )
     )
     del all_walks, all_crosses
 
-    # drop edges where origin and destination are the same (useless!)
+    # drop edges where origin and destination are the same. this happens in
+    # two cases:
+    # - walks along a looping pedestrian road (same starting and ending point)
+    # - an edge case where an intersection only contains two ways: a
+    #   pedestrian one and a non-pedestrian one. in this case, the algorithm
+    #   generates a "crossing" over the non-pedestrian way, but both the
+    #   origin and the destination are the intermediate node generated on the
+    #   pedestrian way. we could filter out these cases as they are being
+    #   generated, but honestly i think it's easier to do it here
     intermediate_edges = intermediate_edges[
         intermediate_edges.index.get_level_values(0)
         != intermediate_edges.index.get_level_values(1)
