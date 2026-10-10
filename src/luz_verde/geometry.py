@@ -16,15 +16,11 @@ def _segment_line(row: pd.Series):
     """
     Given a line string or a linear ring, a start point and an end point,
     takes the substring of the line that goes from the start point to the end
-    point.
-
-    If it's a line string, assumes that the start and end point are on the
-    line itself.
+    point. Projects the points onto the ring if necessary, connecting the
+    actual start/end with the projected start/end using straight lines.
 
     If it's a ring, always takes the route increasing from the start point to
     the end point, wrapping around the end/start of the ring if necessary.
-    Also projects the points onto the ring if necessary, connecting the actual
-    start/end with the projected start/end using straight lines.
     """
 
     line: LineString | LinearRing = row["geometry"]
@@ -38,10 +34,6 @@ def _segment_line(row: pd.Series):
     # start and end points with a straight line
     if start_proj == end_proj:
         return LineString([start_point, end_point])
-
-    # if it's a line string, then just return the substring
-    if line.geom_type == "LineString":
-        return substring(line, start_proj, end_proj)
 
     # now we assume we are working with a ring
     # "expected" case
