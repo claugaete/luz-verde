@@ -772,6 +772,13 @@ def generate_crossing_graph(
                 "graph; using default value."
             )
             node_definitions = DEFAULT_CROSSING_DEFINITIONS
+        node_definitions = base_graph.graph.get("node_definitions")
+        if node_definitions is None:
+            warnings.warn(
+                "No value for `node_definitions` was found in the base "
+                "graph; using default value."
+            )
+            node_definitions = DEFAULT_CROSSING_DEFINITIONS
     if edge_definitions is None:
         edge_definitions = base_graph.graph.get("edge_definitions")
         if edge_definitions is None:
