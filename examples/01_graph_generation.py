@@ -78,11 +78,12 @@ crossing_graph = lv.generate_crossing_graph(
 # %%
 # route from Costanera Center (shopping mall) to Parque Inés de Suárez (park)
 start = ox.nearest_nodes(crossing_graph, -70.6059619, -33.4191433)
-end = ox.nearest_nodes(crossing_graph,  -70.6118034, -33.4389438)
+end = ox.nearest_nodes(crossing_graph, -70.6118034, -33.4389438)
 route = ox.shortest_path(crossing_graph, start, end, weight="length")
 
 # %%
-# visualize the route using an interactive map
+# visualize the route using an interactive map (put an empty markdown cell
+# below this one if the basemap doesn't load)
 ox.routing.route_to_gdf(crossing_graph, route).explore()
 
 # %% [markdown]
