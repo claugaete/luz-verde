@@ -64,6 +64,8 @@ DEFAULT_CROSSING_DEFINITIONS: EdgeDefinitions = {
     "unsafe": ["no"],
 }
 
+DEFAULT_UNWALKABLE_PATS = ["motorway", "trunk", "busway", "cycleway"]
+
 
 def _match_road(highway_value: str, valid_pats: list[str]):
     """
@@ -216,7 +218,7 @@ def get_base_graph(
     loader_fn : callable, default: osmnx.graph_from_polygon
         OSMnx loader function. Must work when passed `loader_args` as
         positional arguments.
-    node_definitions : NodeDefinitions
+    node_definitions : NodeDefinitions or None, default: None
         Dictionary defining which crossing types are considered "safe" (can
         always cross) and "unsafe" (can never cross). Other crossing types are
         considered "neutral" (can only cross if the road is not major).
@@ -238,7 +240,7 @@ def get_base_graph(
 
         IMPORTANT: `no` will always be considered unsafe, even if it is not
         explicitly in the unsafe list.
-    edge_definitions : EdgeDefinitions
+    edge_definitions : EdgeDefinitions or None, default: None
         Dictionary defining which highway types are considered "major" (can
         only cross if the node you are crossing along is safe), "minor" (can
         always cross unless the node you are crossing along is unsafe) and
@@ -431,7 +433,7 @@ def _get_angle(geometry: LineString) -> float:
 
 
 def _get_walkable(
-    edge: pd.Series, pedestrian_pats: list[str]
+    edge: pd.Series, pedestrian_pats: list[str], default_unwalkable_pats: list[str]
 ) -> Literal["both", "left", "right", "neither"]:
     """
     Returns which sides an edge/road is walkable along. Can be either "both",
@@ -452,19 +454,50 @@ def _get_walkable(
     ):
         return "both"
 
-    # motorways and cycleways are never walkable
-    if _match_road(edge["highway"], ["motorway", "trunk", "cycleway"]) or foot in (
+    # skip explicitly unwalkable roads
+    if foot in (
         "no",
         "use_sidepath",
     ):
         return "neither"
 
+    # if the road is in `default_unwalkable_pats`, we will assume it is
+    # unwalkable unless explicitly stated otherwise
     # we will only exclude a side if it is explicitly UNwalkable (we will
     # assume all sides are walkable unless shown otherwise)
+    if _match_road(edge["highway"], default_unwalkable_pats):
+        sidewalk = edge["sidewalk"] in ("yes", "both")
+        sidewalk_both = edge["sidewalk:both"] == "yes"
+        sidewalk_left = edge["sidewalk:left"] == "yes" or edge["sidewalk"] == "left"
+        sidewalk_right = edge["sidewalk:right"] == "yes" or edge["sidewalk"] == "right"
+
+        walkable_left = sidewalk or sidewalk_both or sidewalk_left
+
+        walkable_right = sidewalk or sidewalk_both or sidewalk_right
+
+        if edge["reversed"]:
+            walkable_left, walkable_right = walkable_right, walkable_left
+
+        match (walkable_left, walkable_right):
+            case (True, True):
+                return "both"
+            case (True, False):
+                return "left"
+            case (False, True):
+                return "right"
+            case _:
+                return "neither"
+
+    # else, we will only exclude a side if it is explicitly UNwalkable (we
+    # will assume all sides are walkable unless shown otherwise)
     no_sidewalk = edge["sidewalk"] in ("no", "separate")
     no_sidewalk_both = edge["sidewalk:both"] in ("no", "separate")
-    no_sidewalk_left = edge["sidewalk:left"] in ("no", "separate")
-    no_sidewalk_right = edge["sidewalk:right"] in ("no", "separate")
+    no_sidewalk_left = edge["sidewalk:left"] in ("no", "separate") or (
+        edge["sidewalk"] == "right"
+    )
+    no_sidewalk_right = edge["sidewalk:right"] in ("no", "separate") or (
+        edge["sidewalk"] == "left"
+    )
 
     unwalkable_left = no_sidewalk or no_sidewalk_both or no_sidewalk_left
 
@@ -723,6 +756,7 @@ def generate_crossing_graph(
     base_graph: nx.MultiDiGraph,
     node_definitions: NodeDefinitions | None = None,
     edge_definitions: EdgeDefinitions | None = None,
+    default_unwalkable_pats: list[str] | None = None,
     verbose: bool = False,
 ) -> nx.MultiDiGraph:
     """
@@ -735,7 +769,7 @@ def generate_crossing_graph(
     ---
     base_graph : MultiDiGraph
         Original street network; generated with `get_base_graph`.
-    node_definitions : NodeDefinitions
+    node_definitions : NodeDefinitions or None, default: None
         Dictionary defining which crossing types are considered "safe" (can
         always cross) and "unsafe" (can never cross). Other crossing types are
         considered "neutral" (can only cross if the road is not major).
@@ -744,7 +778,7 @@ def generate_crossing_graph(
 
         By default, uses the node definitions given to the base graph when it
         was generated.
-    edge_definitions : EdgeDefinitions
+    edge_definitions : EdgeDefinitions or None, default: None
         Dictionary defining which highway types are considered "major" (can
         only cross if the node you are crossing along is safe), "minor" (can
         always cross unless the node you are crossing along is unsafe) and
@@ -754,6 +788,11 @@ def generate_crossing_graph(
 
         By default, uses the edge definitions given to the base graph when it
         was generated.
+    default_unwalkable_pats : list[str] or None, default: None
+        By default, roads are assumed walkable on both sides unless shown
+        otherwise. Roads whose `highway` tag matches to any of the regex
+        patterns in `default_unwalkable_pats` are assumed to be unwalkable on
+        both sides unless shown otherwise.
     verbose : bool, default: False
         Whether to print updates and show progress bars while the graph is
         being generated.
@@ -788,6 +827,9 @@ def generate_crossing_graph(
             )
             edge_definitions = DEFAULT_ROAD_DEFINITIONS
 
+    if default_unwalkable_pats is None:
+        default_unwalkable_pats = DEFAULT_UNWALKABLE_PATS
+
     if verbose:
         print("(1/3) Calculating auxiliary variables...")
 
@@ -796,7 +838,9 @@ def generate_crossing_graph(
     gdf_edges["crossable"] = _set_edge_crossable(gdf_edges, edge_definitions["major"])
     gdf_edges["angle"] = gdf_edges.geometry.apply(_get_angle)
     gdf_edges["walkable"] = gdf_edges.apply(
-        _get_walkable, args=(edge_definitions["pedestrian"],), axis=1
+        _get_walkable,
+        args=(edge_definitions["pedestrian"], default_unwalkable_pats),
+        axis=1,
     )
     gdf_edges["is_pedestrian"] = gdf_edges["highway"].str.match(
         "|".join(edge_definitions["pedestrian"])
