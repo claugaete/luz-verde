@@ -51,11 +51,12 @@ with open(DATA_PATH / f"{file_name}.geojson", "r") as f:
 
 # %%
 base_graph = lv.get_base_graph(
-    study_area_polygon, cache_dir=DATA_PATH / "osmnx-cache", verbose=True
+    study_area_polygon,
+    unsafe_distance_from_signal=20,
+    fix_marked_crossings_near_signals=30,
+    cache_dir=DATA_PATH / "osmnx-cache",
+    verbose=True,
 )
-
-# %%
-crossing_graph = ox.graph_from_polygon(study_area_polygon, network_type="walk")
 
 # %% [markdown]
 # ## Generating the crossing graph
@@ -66,7 +67,7 @@ crossing_graph = ox.graph_from_polygon(study_area_polygon, network_type="walk")
 
 # %%
 crossing_graph = lv.generate_crossing_graph(
-    base_graph, fix_marked_crossings_near_signals=30, verbose=True
+    base_graph, verbose=True
 )
 
 # %% [markdown]
@@ -76,7 +77,7 @@ crossing_graph = lv.generate_crossing_graph(
 
 # %%
 # route from Costanera Center (shopping mall) to Parque Inés de Suárez (park)
-start = ox.nearest_nodes(crossing_graph, -70.6054041, -33.4176924)
+start = ox.nearest_nodes(crossing_graph, -70.6059619, -33.4191433)
 end = ox.nearest_nodes(crossing_graph,  -70.6118034, -33.4389438)
 route = ox.shortest_path(crossing_graph, start, end, weight="length")
 
