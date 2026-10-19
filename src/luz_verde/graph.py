@@ -640,7 +640,7 @@ def _generate_intermediate_nodes_and_crossings(
 
         # if it's all pedestrian roads and the crossing has no specific tag,
         # then simplify to just one intermediate node
-        if group["is_pedestrian"].all() and u_data["crossing"] == "none":
+        if group["is_pedestrian"].all() and pd.isna(u_data["crossing"]):
             node_records.append(_IntermediateNodeRecord(index=idx, base_node=u))
             gdf_edges.loc[group.index, ["left_node", "right_node"]] = idx
             idx += 1
