@@ -105,7 +105,7 @@ ox.routing.route_to_gdf(crossing_graph, route).explore()
 
 # %%
 print("Saving graph...")
-ox.io.save_graphml(
+lv.save_graphml(
     crossing_graph,
     DATA_PATH / "generated-graphs" / f"{file_name}_crossing_graph.graphml"
 )

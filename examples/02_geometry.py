@@ -40,10 +40,8 @@ else:
 
 # %%
 print("Loading graph...")
-crossing_graph = ox.io.load_graphml(
+crossing_graph = lv.load_graphml(
     DATA_PATH / "generated-graphs" / f"{file_name}_crossing_graph.graphml",
-    node_dtypes={"index": int, "base_node": int, "angle": float},
-    edge_dtypes={"edge_osmid": int, "edge_crossable": ox.io._convert_bool_string},
 )
 print("Graph loaded.")
 
@@ -129,7 +127,7 @@ new_gdf_edges.explore()
 
 # %%
 print("Saving graph...")
-ox.io.save_graphml(
+lv.save_graphml(
     buffered_graph,
     DATA_PATH / "generated-graphs" / f"{file_name}_buffered_graph.graphml"
 )

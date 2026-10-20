@@ -9,9 +9,12 @@ OpenStreetMap data.
 
 from .geometry import buffer_crossing_graph_geometry
 from .graph import generate_crossing_graph, get_base_graph
+from .io import load_graphml, save_graphml
 
 __all__ = [
     "buffer_crossing_graph_geometry",
     "generate_crossing_graph",
     "get_base_graph",
+    "load_graphml",
+    "save_graphml",
 ]
