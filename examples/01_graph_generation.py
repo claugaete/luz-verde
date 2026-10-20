@@ -44,6 +44,13 @@ else:
 # function](https://osmnx.readthedocs.io/en/stable/user-reference.html#module-osmnx.graph)
 # by passing it as `loader_fn`, and providing all its positional parameters as
 # `loader_args`.
+#
+# When downloading the base graph, we also do some preprocessing to tag nodes
+# that are near traffic signals as uncrossable (so that the routing engine uses
+# the designated crossings), fix crossings incorrectly tagged as `marked` when
+# they should be tagged as `traffic_signals` (a common issue in Santiago), and
+# simplify the graph (using OSMnx) to make it as small as possible without
+# losing any features.
 
 # %%
 with open(DATA_PATH / f"{file_name}.geojson", "r") as f:
