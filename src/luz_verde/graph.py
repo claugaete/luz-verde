@@ -443,78 +443,49 @@ def _get_walkable(
     the edge, and ending at the last point in the edge (e.g. if the left side
     is walkable, you can walk along the edge while always being to the left of
     said edge if you were looking forward while walking).
+
+    If the edge's `highway` tag matches with any of the regex patterns in
+    `default_unwalkable_pats`, we will assume it is unwalkable unless
+    explicitly stated otherwise. Else, we will assume all sides are walkable
+    unless shown otherwise.
     """
 
     foot = edge["foot"]
+    sidewalk = edge["sidewalk"]
 
-    # designated footpaths are always walkable on both sides
-    if _match_road(edge["highway"], pedestrian_pats) or foot in (
-        "yes",
-        "designated",
-    ):
+    if _match_road(edge["highway"], pedestrian_pats) or foot in ("yes", "designated"):
         return "both"
-
-    # skip explicitly unwalkable roads
-    if foot in (
-        "no",
-        "use_sidepath",
-    ):
+    if foot in ("no", "use_sidepath"):
         return "neither"
 
-    # if the road is in `default_unwalkable_pats`, we will assume it is
-    # unwalkable unless explicitly stated otherwise
-    # we will only exclude a side if it is explicitly UNwalkable (we will
-    # assume all sides are walkable unless shown otherwise)
-    if _match_road(edge["highway"], default_unwalkable_pats):
-        sidewalk = edge["sidewalk"] in ("yes", "both")
-        sidewalk_both = edge["sidewalk:both"] == "yes"
-        sidewalk_left = edge["sidewalk:left"] == "yes" or edge["sidewalk"] == "left"
-        sidewalk_right = edge["sidewalk:right"] == "yes" or edge["sidewalk"] == "right"
-
-        walkable_left = sidewalk or sidewalk_both or sidewalk_left
-
-        walkable_right = sidewalk or sidewalk_both or sidewalk_right
-
+    def _sides(left: bool, right: bool) -> Literal["both", "left", "right", "neither"]:
+        """Given whether the left and right sides are walkable, returns a
+        string for where you can walk on."""
         if edge["reversed"]:
-            walkable_left, walkable_right = walkable_right, walkable_left
+            left, right = right, left
+        return {
+            (True, True): "both",
+            (True, False): "left",
+            (False, True): "right",
+            (False, False): "neither",
+        }[left, right]
 
-        match (walkable_left, walkable_right):
-            case (True, True):
-                return "both"
-            case (True, False):
-                return "left"
-            case (False, True):
-                return "right"
-            case _:
-                return "neither"
+    if _match_road(edge["highway"], default_unwalkable_pats):
+        base = sidewalk in ("yes", "both") or edge["sidewalk:both"] == "yes"
+        return _sides(
+            left=base or edge["sidewalk:left"] == "yes" or sidewalk == "left",
+            right=base or edge["sidewalk:right"] == "yes" or sidewalk == "right",
+        )
 
-    # else, we will only exclude a side if it is explicitly UNwalkable (we
-    # will assume all sides are walkable unless shown otherwise)
-    no_sidewalk = edge["sidewalk"] in ("no", "separate")
-    no_sidewalk_both = edge["sidewalk:both"] in ("no", "separate")
-    no_sidewalk_left = edge["sidewalk:left"] in ("no", "separate") or (
-        edge["sidewalk"] == "right"
+    # if the edge is not in `default_unwalkable_pats`
+    base = sidewalk in ("no", "separate") or edge["sidewalk:both"] in ("no", "separate")
+    unwalkable_left = (
+        base or edge["sidewalk:left"] in ("no", "separate") or sidewalk == "right"
     )
-    no_sidewalk_right = edge["sidewalk:right"] in ("no", "separate") or (
-        edge["sidewalk"] == "left"
+    unwalkable_right = (
+        base or edge["sidewalk:right"] in ("no", "separate") or sidewalk == "left"
     )
-
-    unwalkable_left = no_sidewalk or no_sidewalk_both or no_sidewalk_left
-
-    unwalkable_right = no_sidewalk or no_sidewalk_both or no_sidewalk_right
-
-    if edge["reversed"]:
-        unwalkable_left, unwalkable_right = unwalkable_right, unwalkable_left
-
-    match (unwalkable_left, unwalkable_right):
-        case (True, True):
-            return "neither"
-        case (True, False):
-            return "right"
-        case (False, True):
-            return "left"
-        case _:
-            return "both"
+    return _sides(left=not unwalkable_left, right=not unwalkable_right)
 
 
 def _set_node_safety(
