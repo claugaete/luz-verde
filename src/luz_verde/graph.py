@@ -264,18 +264,19 @@ def get_base_graph(
         or `unclassified`, and pedestrian roads contain `footway`,
         `pedestrian`, `path`, `steps` or `corridor`.
     unsafe_distance_from_signal : float, default: 20
-        Crossings that are at most this distance away from a traffic signal
-        will be deemed unsafe, unless they were previously deemed safe. This
-        is to avoid routing that might make people cross along a road when
-        there is a proper traffic signal crossing nearby. Distance is measured
-        along the network, considering only major and minor roads.
+        Crossings that are at most this distance away (in meters) from a
+        traffic signal will be deemed unsafe, unless they were previously
+        deemed safe. This is to avoid routing that might make people cross
+        along a road when there is a proper traffic signal crossing nearby.
+        Distance is measured along the network, considering only major and
+        minor roads.
     fix_marked_crossings_near_signals : float, default: 0
         Crossings tagged `crossing=marked` in OSM will be converted to
         `crossing=traffic_signals` if they are at most this distance away from
         a traffic signal. This is a quick fix for a common issue in Santiago's
         OSM data (where traffic signal crossings are incorrectly tagged as
         "marked", a type of uncontrolled crossing). The distance is measured
-        along the network, considering only major and minor roads.
+        (in meters) along the network, considering only major and minor roads.
     cache_dir : Path, default: "cache"
         Path to save/load cached OSMnx downloads.
     verbose : bool, default: False
