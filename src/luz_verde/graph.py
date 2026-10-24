@@ -348,8 +348,11 @@ def get_base_graph(
             street_graph, (df_nodes["crossing"] == "marked").to_dict(), name="is_marked"
         )
 
-    # standardize crossings
+    # standardize crossings (clear all values beforehand and only assign
+    # non-null ones)
     df_nodes["std_crossing"] = _standardize_crossing_types(df_nodes)
+    for _, d in street_graph.nodes(data=True):
+        d.pop("crossing", None)
     nx.set_node_attributes(
         street_graph, df_nodes["std_crossing"].dropna().to_dict(), name="crossing"
     )
