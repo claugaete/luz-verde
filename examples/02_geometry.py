@@ -119,7 +119,8 @@ new_gdf_nodes[new_gdf_nodes["base_node"] == example_base_node]
 
 # %%
 # (put an empty markdown cell below this one if the basemap doesn't load)
-# now all crossings are edges (with different lengths), and different-sided walks have different geometries ()
+# now all crossings are edges (with different lengths), and different-sided
+# walks have different geometries
 new_gdf_edges.explore()
 
 # %% [markdown]
