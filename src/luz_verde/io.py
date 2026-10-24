@@ -1,3 +1,4 @@
+from ast import literal_eval
 from pathlib import Path
 
 import osmnx as ox
@@ -43,4 +44,9 @@ def load_graphml(filepath: str | Path):
         filepath,
         node_dtypes={"index": int, "base_node": int, "angle": float},
         edge_dtypes={"edge_osmid": int, "edge_crossable": ox.io._convert_bool_string},
+        graph_dtypes={
+            "buffered": ox.io._convert_bool_string,
+            "node_definitions": literal_eval,
+            "edge_definitions": literal_eval,
+        },
     )
