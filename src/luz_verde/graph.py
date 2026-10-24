@@ -702,6 +702,7 @@ def _build_node_gdf(
             geometry=gdf_nodes.loc[new_nodes_df["base_node"]].geometry.values,
             crs=gdf_nodes.crs,
         )
+        .set_index("index")
         .rename_axis("osmid")
         .assign(
             x=lambda gdf: gdf.geometry.x,
