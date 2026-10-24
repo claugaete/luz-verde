@@ -1,7 +1,9 @@
 from collections.abc import Callable
 from typing import Literal, TypedDict
 
+import geopandas as gpd
 import networkx as nx
+import osmnx as ox
 from shapely import LineString
 
 from .graph import EdgeDefinitions, match_road
@@ -192,3 +194,39 @@ def add_edge_travel_times(
         },
         name="travel_time",
     )
+
+
+def get_route_gdf(
+    crossing_graph: nx.MultiDiGraph,
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> gpd.GeoDataFrame:
+    """
+    Given a crossing graph, gets the list of edges that form the fastest route
+    between the start and end points.
+
+    Parameters
+    ---
+    crossing_graph : MultiDiGraph
+        Crossing graph, generated with `generate_crossing_graph`. Must have
+        travel times calculated; this is done with `add_edge_travel_times`.
+    start : tuple[float, float]
+        X (longitude) and Y (latitude) coordinates for the starting point, in
+        WSG 84 (decimal degrees).
+    end : tuple[float, float]
+        X (longitude) and Y (latitude) coordinates for the ending point, in
+        WSG 84 (decimal degrees).
+
+    Returns
+    ---
+    gdf_edges : GeoDataFrame
+        A GeoDataFrame with the list of edges that form the fastest route.
+    """
+
+    # get nearest nodes to start and end point
+    start_node = ox.nearest_nodes(crossing_graph, *start)
+    end_node = ox.nearest_nodes(crossing_graph, *end)
+
+    route = ox.shortest_path(crossing_graph, start_node, end_node, weight="travel_time")
+
+    return ox.routing.route_to_gdf(crossing_graph, route)

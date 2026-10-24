@@ -10,13 +10,14 @@ OpenStreetMap data.
 from .geometry import buffer_crossing_graph_geometry
 from .graph import generate_crossing_graph, get_base_graph
 from .io import load_graphml, save_graphml
-from .routing import add_edge_travel_times
+from .routing import add_edge_travel_times, get_route_gdf
 
 __all__ = [
     "add_edge_travel_times",
     "buffer_crossing_graph_geometry",
     "generate_crossing_graph",
     "get_base_graph",
+    "get_route_gdf",
     "load_graphml",
     "save_graphml",
 ]
