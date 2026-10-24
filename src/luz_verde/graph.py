@@ -67,7 +67,7 @@ DEFAULT_CROSSING_DEFINITIONS: EdgeDefinitions = {
 DEFAULT_UNWALKABLE_PATS = ["motorway", "trunk", "busway", "cycleway"]
 
 
-def _match_road(highway_value: str, valid_pats: list[str]):
+def match_road(highway_value: str, valid_pats: list[str]):
     """
     Returns True if `highway_value` matches one of `valid_pats`, False
     otherwise.
@@ -169,7 +169,7 @@ def _update_traffic_signals(
             # - the destination node's new closest traffic signal would be at
             #   most max_dist, and would be closer than the current closest
             #   traffic signal
-            if _match_road(
+            if match_road(
                 highway, edge_definitions["major"] + edge_definitions["minor"]
             ) and (
                 (current_v is not None and candidate_v < current_v)
@@ -457,7 +457,7 @@ def _get_walkable(
     foot = edge["foot"]
     sidewalk = edge["sidewalk"]
 
-    if _match_road(edge["highway"], pedestrian_pats) or foot in ("yes", "designated"):
+    if match_road(edge["highway"], pedestrian_pats) or foot in ("yes", "designated"):
         return "both"
     if foot in ("no", "use_sidepath"):
         return "neither"
@@ -474,7 +474,7 @@ def _get_walkable(
             (False, False): "neither",
         }[left, right]
 
-    if _match_road(edge["highway"], default_unwalkable_pats):
+    if match_road(edge["highway"], default_unwalkable_pats):
         base = sidewalk in ("yes", "both") or edge["sidewalk:both"] == "yes"
         return _sides(
             left=base or edge["sidewalk:left"] == "yes" or sidewalk == "left",
