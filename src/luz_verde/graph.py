@@ -100,6 +100,10 @@ def _standardize_crossing_types(df_nodes: pd.DataFrame) -> pd.Series:
         ),
         "uncontrolled": (
             df_nodes["crossing"].isin(["uncontrolled", "marked", "zebra"])
+            | (
+                df_nodes["crossing:markings"].notna()
+                & (df_nodes["crossing:markings"] != "no")
+            )
         ),
         "unmarked": (df_nodes["crossing"].str.contains("unmarked")),
         "no": (df_nodes["crossing"].isin(["no", "separate"])),
@@ -300,7 +304,12 @@ def get_base_graph(
     if "no" not in node_definitions["unsafe"]:
         node_definitions["unsafe"].append("no")
 
-    ox.settings.useful_tags_node = ["highway", "crossing", "crossing:signals"]
+    ox.settings.useful_tags_node = [
+        "highway",
+        "crossing",
+        "crossing:signals",
+        "crossing:markings",
+    ]
     ox.settings.useful_tags_way = [
         "highway",
         "name",
