@@ -955,6 +955,9 @@ def generate_crossing_graph(
     new_graph = ox.graph_from_gdfs(intermediate_nodes, intermediate_edges)
     new_graph = ox.truncate.largest_component(new_graph, strongly=False)
 
+    new_graph.graph["node_definitions"] = node_definitions
+    new_graph.graph["edge_definitions"] = edge_definitions
+
     if verbose:
         print(
             "Graph generated, "
