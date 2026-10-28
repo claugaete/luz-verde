@@ -53,13 +53,13 @@ class _CcwCrossingRecord:
     side: str = "counterclockwise"
 
 
-DEFAULT_ROAD_DEFINITIONS: NodeDefinitions = {
+DEFAULT_ROAD_DEFINITIONS: EdgeDefinitions = {
     "major": ["motorway", "trunk", "primary", "secondary", "tertiary", "busway"],
     "minor": ["residential", "unclassified"],
     "pedestrian": ["footway", "pedestrian", "path", "steps", "corridor"],
 }
 
-DEFAULT_CROSSING_DEFINITIONS: EdgeDefinitions = {
+DEFAULT_CROSSING_DEFINITIONS: NodeDefinitions = {
     "safe": ["traffic_signals", "uncontrolled", "unmarked"],
     "unsafe": ["no"],
 }
@@ -613,9 +613,8 @@ def _generate_intermediate_nodes_and_crossings(
     idx = 0
 
     groupby = gdf_edges.groupby("u")
-    iterator = tqdm(groupby) if show_progress else groupby
 
-    for u, group in iterator:
+    for u, group in tqdm(groupby, disable=not show_progress):
         u_data = gdf_nodes.loc[u]
 
         # skip node if it's on the boundary
