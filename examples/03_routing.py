@@ -133,11 +133,15 @@ stops_for_shortest_route = (
 
 # %%
 fig, ax = plt.subplots()
-shortest_route.to_crs(5361).plot(ax=ax, color="tab:blue", alpha=0.5, linewidth=2)
-no_stops_route.to_crs(5361).plot(ax=ax, color="tab:orange", alpha=0.5, linewidth=2)
-gpd.GeoSeries([shapely.Point(start1), shapely.Point(end1)], crs=4326).to_crs(5361).plot(
-    ax=ax, zorder=10
+shortest_route.to_crs(PROJECTED_CRS).plot(
+    ax=ax, color="tab:blue", alpha=0.5, linewidth=2
 )
+no_stops_route.to_crs(PROJECTED_CRS).plot(
+    ax=ax, color="tab:orange", alpha=0.5, linewidth=2
+)
+gpd.GeoSeries([shapely.Point(start1), shapely.Point(end1)], crs=4326).to_crs(
+    PROJECTED_CRS
+).plot(ax=ax, zorder=10)
 
 handles = [
     mlines.Line2D([], [], color="white", marker="o", markerfacecolor="tab:blue"),
@@ -218,11 +222,13 @@ safest_route = lv.get_route_gdf(crossing_graph, start2, end2)
 
 # %%
 fig, ax = plt.subplots()
-osmnx_route.to_crs(5361).plot(ax=ax, color="tab:blue", alpha=0.5, linewidth=2)
-safest_route.to_crs(5361).plot(ax=ax, color="tab:orange", alpha=0.5, linewidth=2)
-gpd.GeoSeries([shapely.Point(start2), shapely.Point(end2)], crs=4326).to_crs(5361).plot(
-    ax=ax, zorder=10
+osmnx_route.to_crs(PROJECTED_CRS).plot(ax=ax, color="tab:blue", alpha=0.5, linewidth=2)
+safest_route.to_crs(PROJECTED_CRS).plot(
+    ax=ax, color="tab:orange", alpha=0.5, linewidth=2
 )
+gpd.GeoSeries([shapely.Point(start2), shapely.Point(end2)], crs=4326).to_crs(
+    PROJECTED_CRS
+).plot(ax=ax, zorder=10)
 
 handles = [
     mlines.Line2D([], [], color="white", marker="o", markerfacecolor="tab:blue"),
