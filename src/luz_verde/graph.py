@@ -777,6 +777,8 @@ def generate_crossing_graph(
         otherwise. Roads whose `highway` tag matches to any of the regex
         patterns in `default_unwalkable_pats` are assumed to be unwalkable on
         both sides unless shown otherwise.
+        
+        By default, contains `motorway`, `trunk`, `busway` and `cycleway`.
     verbose : bool, default: False
         Whether to print updates and show progress bars while the graph is
         being generated.
