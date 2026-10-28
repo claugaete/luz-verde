@@ -1,7 +1,3 @@
-# %%
-# %reload_ext autoreload
-# %autoreload 2
-
 # %% [markdown]
 # # Example 3: routing
 #
