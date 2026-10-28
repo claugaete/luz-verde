@@ -1,3 +1,7 @@
+"""
+Functions for assigning travel times to edges and routing between points.
+"""
+
 from collections.abc import Callable
 from typing import Literal
 
