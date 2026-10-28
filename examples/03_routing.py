@@ -73,10 +73,13 @@ def prettify_plot(ax: plt.Axes, basemap_zoom: int):
 # script (and with the same value for `USE_GREATER_SANTIAGO`).
 
 # %%
+file_path = DATA_PATH / "generated-graphs" / f"{file_name}_buffered_graph"
+
 print("Loading graph...")
-crossing_graph = lv.load_graphml(
-    DATA_PATH / "generated-graphs" / f"{file_name}_buffered_graph.graphml",
-)
+if USE_GREATER_SANTIAGO:
+    crossing_graph = lv.load_pickle(file_path.with_suffix(".pkl"))
+else:
+    crossing_graph = lv.load_graphml(file_path.with_suffix(".graphml"))
 print("Graph loaded.")
 
 # %% [markdown]

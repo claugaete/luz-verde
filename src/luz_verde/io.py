@@ -1,3 +1,4 @@
+import pickle
 from ast import literal_eval
 from pathlib import Path
 
@@ -50,3 +51,40 @@ def load_graphml(filepath: str | Path):
             "edge_definitions": literal_eval,
         },
     )
+
+
+def save_pickle(crossing_graph: MultiDiGraph, filepath: str | Path):
+    """
+    Saves the crossing graph to a pickle file.
+
+    Parameters
+    ---
+    crossing_graph : MultiDiGraph
+        The graph to save, generated with `generate_crossing_graph`.
+    filepath : str or Path
+        The path to save the crossing graph to.
+    """
+
+    with open(filepath, "wb") as f:
+        pickle.dump(crossing_graph, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+      
+def load_pickle(filepath: str | Path):
+    """
+    Loads a crossing graph from a pickle file.
+
+    Parameters
+    ---
+    filepath : str or Path
+        The path to load the crossing graph from.
+
+    Returns
+    ---
+    crossing_graph : MultiDiGraph
+        The loaded crossing graph.
+    """
+
+    with open(filepath, "rb") as f:
+        crossing_graph = pickle.load(f)
+    
+    return crossing_graph

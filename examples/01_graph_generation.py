@@ -104,9 +104,17 @@ ox.routing.route_to_gdf(crossing_graph, route).explore()
 # load graphs from unknown sources.
 
 # %%
+file_path = DATA_PATH / "generated-graphs" / f"{file_name}_crossing_graph"
+
 print("Saving graph...")
-lv.save_graphml(
-    crossing_graph,
-    DATA_PATH / "generated-graphs" / f"{file_name}_crossing_graph.graphml"
-)
+if USE_GREATER_SANTIAGO:
+    lv.save_pickle(
+        crossing_graph,
+        file_path.with_suffix(".pkl")
+    )
+else:
+    lv.save_graphml(
+        crossing_graph,
+        file_path.with_suffix(".graphml")
+    )
 print("Graph saved.")

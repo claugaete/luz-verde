@@ -39,10 +39,13 @@ else:
 # script (and with the same value for `USE_GREATER_SANTIAGO`).
 
 # %%
+file_path = DATA_PATH / "generated-graphs" / f"{file_name}_crossing_graph"
+
 print("Loading graph...")
-crossing_graph = lv.load_graphml(
-    DATA_PATH / "generated-graphs" / f"{file_name}_crossing_graph.graphml",
-)
+if USE_GREATER_SANTIAGO:
+    crossing_graph = lv.load_pickle(file_path.with_suffix(".pkl"))
+else:
+    crossing_graph = lv.load_graphml(file_path.with_suffix(".graphml"))
 print("Graph loaded.")
 
 # %% [markdown]
@@ -127,9 +130,17 @@ new_gdf_edges.explore()
 # We will save the graph with the new geometries, for use in future examples.
 
 # %%
+file_path = DATA_PATH / "generated-graphs" / f"{file_name}_buffered_graph"
+
 print("Saving graph...")
-lv.save_graphml(
-    buffered_graph,
-    DATA_PATH / "generated-graphs" / f"{file_name}_buffered_graph.graphml"
-)
+if USE_GREATER_SANTIAGO:
+    lv.save_pickle(
+        buffered_graph,
+        file_path.with_suffix(".pkl")
+    )
+else:
+    lv.save_graphml(
+        buffered_graph,
+        file_path.with_suffix(".graphml")
+    )
 print("Graph saved.")

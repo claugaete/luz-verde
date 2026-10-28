@@ -10,7 +10,7 @@ OpenStreetMap data.
 from .filtering import filter_edges, get_components_after_filter
 from .geometry import buffer_crossing_graph_geometry
 from .graph import generate_crossing_graph, get_base_graph
-from .io import load_graphml, save_graphml
+from .io import load_graphml, load_pickle, save_graphml, save_pickle
 from .routing import add_edge_travel_times, get_route_gdf
 
 __all__ = [
@@ -22,5 +22,7 @@ __all__ = [
     "get_components_after_filter",
     "get_route_gdf",
     "load_graphml",
+    "load_pickle",
     "save_graphml",
+    "save_pickle",
 ]
