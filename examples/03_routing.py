@@ -5,7 +5,9 @@
 # between places.
 #
 # In the cell below, you can select whether you want to run the example for all
-# of Greater Santiago or just one municipality (Providencia).
+# of Greater Santiago or just one municipality (Providencia). Do consider that
+# this example gives the exact same results in either case (we are always
+# generating routes inside Providencia).
 
 # %%
 USE_GREATER_SANTIAGO = False
@@ -170,7 +172,7 @@ ax.set_title(
 )
 
 ax.get_figure().savefig(
-    DATA_PATH / "img" / f"{file_name}_fastest_route_comparison.png",
+    DATA_PATH / "img" / "fastest_route_comparison.png",
     bbox_inches="tight",
     dpi=300,
 )
@@ -179,17 +181,16 @@ ax.get_figure().savefig(
 # ## Comparing generated routes with OSMnx's default
 
 # %% [markdown]
-# We can load the pedestrian street network OSMnx generates for the same polygon
-# as our crossing graph, and compare the routes it generates with the ones given
-# by the crossing graph.
+# We can load the pedestrian street network OSMnx generates for Providencia, and
+# compare the routes it generates with the ones given by the crossing graph.
 
 # %%
-with open(DATA_PATH / f"{file_name}.geojson", "r") as f:
-    study_area_polygon = shapely.from_geojson(f.read())
+with open(DATA_PATH / "providencia.geojson", "r") as f:
+    providencia_polygon = shapely.from_geojson(f.read())
 
 # %%
 ox.settings.cache_folder = DATA_PATH / "osmnx-cache"
-osmnx_graph = ox.graph_from_polygon(study_area_polygon, network_type="walk")
+osmnx_graph = ox.graph_from_polygon(providencia_polygon, network_type="walk")
 
 # manually assign the travel times to the osmnx graph
 WALK_SPEED = 3.6
@@ -247,7 +248,7 @@ prettify_plot(ax, basemap_zoom=17)
 ax.set_title("Comparison between OSMnx and luz-verde routes")
 
 ax.get_figure().savefig(
-    DATA_PATH / "img" / f"{file_name}_osmnx_comparison.png",
+    DATA_PATH / "img" / "osmnx_comparison.png",
     bbox_inches="tight",
     dpi=300,
 )
