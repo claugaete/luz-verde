@@ -17,6 +17,7 @@ USE_GREATER_SANTIAGO = False
 from pathlib import Path
 
 import contextily as cx
+import geopandas as gpd
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -38,21 +39,21 @@ if USE_GREATER_SANTIAGO:
 else:
     file_name = "providencia"
 
-
 # %%
-def prettify_plot(ax: plt.Axes):
+PROJECTED_CRS = 5361
+def prettify_plot(ax: plt.Axes, basemap_zoom: int):
     """Makes the plot prettier (adds a basemap, makes it more square, removes
     ticks.)"""
-    
+
     ax.set_xticks([])
     ax.set_yticks([])
 
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
-    
+
     # expand y-axis (to fit attribution)
-    y0 = y0 - (y1 - y0) / 4
-    y1 = y1 + (y1 - y0) / 4
+    y0 = y0 - (y1 - y0) / 10
+    y1 = y1 + (y1 - y0) / 10
 
     # makes it more square
     xlen = x1 - x0
@@ -64,7 +65,7 @@ def prettify_plot(ax: plt.Axes):
         ax.set_xlim(x0 + extra, x1 - extra)
         ax.set_ylim(y0, y1)
 
-    cx.add_basemap(ax, zoom=17, crs=4326)
+    cx.add_basemap(ax, zoom=basemap_zoom, crs=PROJECTED_CRS)
 
 
 # %% [markdown]
@@ -119,10 +120,21 @@ lv.add_edge_travel_times(
 no_stops_route = lv.get_route_gdf(crossing_graph, start=start1, end=end1)
 
 # %%
+# get the number of stops in the shortest route by getting the updated weights
+# for each edge, and dividing by 1 million (the travel time penalty for each
+# stop)
+stops_for_shortest_route = (
+    sum(crossing_graph[u][v][k]["travel_time"] for u, v, k in shortest_route.index)
+    // 1_000_000
+)
+
+# %%
 fig, ax = plt.subplots()
-shortest_route.plot(ax=ax, color="tab:blue", alpha=0.5, linewidth=2)
-no_stops_route.plot(ax=ax, color="tab:orange", alpha=0.5, linewidth=2)
-ax.plot(*list(zip(start1, end1)), marker="o", linewidth=0)
+shortest_route.to_crs(5361).plot(ax=ax, color="tab:blue", alpha=0.5, linewidth=2)
+no_stops_route.to_crs(5361).plot(ax=ax, color="tab:orange", alpha=0.5, linewidth=2)
+gpd.GeoSeries([shapely.Point(start1), shapely.Point(end1)], crs=4326).to_crs(5361).plot(
+    ax=ax, zorder=10
+)
 
 handles = [
     mlines.Line2D([], [], color="white", marker="o", markerfacecolor="tab:blue"),
@@ -131,12 +143,24 @@ handles = [
 ]
 labels = [
     "Start/end",
-    f"Shortest route ({shortest_route['length'].sum():.0f}m)",
-    f"Route with fewest stops ({no_stops_route['length'].sum():.0f}m)",
+    (
+        f"Shortest route ({shortest_route['length'].sum():.0f}m, "
+        f"{stops_for_shortest_route:.0f} stops)"
+    ),
+    (
+        f"Route with fewest stops ({no_stops_route['length'].sum():.0f}m, "
+        f"{no_stops_route['travel_time'].sum() // 1_000_000:.0f} stops)"
+    ),
 ]
 ax.legend(handles, labels, loc=(0, -0.2))
 
-prettify_plot(ax)
+prettify_plot(ax, basemap_zoom=17)
+
+fig.suptitle("Comparison between optimal routes with\ndifferent weights", y=1.0)
+ax.set_title(
+    'A "stop" is a traffic signal or an unmarked crossing along a major road',
+    fontsize=8,
+)
 
 ax.get_figure().savefig(
     DATA_PATH / "img" / f"{file_name}_fastest_route_comparison.png",
@@ -191,9 +215,11 @@ safest_route = lv.get_route_gdf(crossing_graph, start2, end2)
 
 # %%
 fig, ax = plt.subplots()
-osmnx_route.plot(ax=ax, color="tab:blue", alpha=0.5, linewidth=2)
-safest_route.plot(ax=ax, color="tab:orange", alpha=0.5, linewidth=2)
-ax.plot(*list(zip(start2, end2)), marker="o", linewidth=0)
+osmnx_route.to_crs(5361).plot(ax=ax, color="tab:blue", alpha=0.5, linewidth=2)
+safest_route.to_crs(5361).plot(ax=ax, color="tab:orange", alpha=0.5, linewidth=2)
+gpd.GeoSeries([shapely.Point(start2), shapely.Point(end2)], crs=4326).to_crs(5361).plot(
+    ax=ax, zorder=10
+)
 
 handles = [
     mlines.Line2D([], [], color="white", marker="o", markerfacecolor="tab:blue"),
@@ -207,7 +233,9 @@ labels = [
 ]
 ax.legend(handles, labels, loc=(0, -0.2))
 
-prettify_plot(ax)
+prettify_plot(ax, basemap_zoom=17)
+
+ax.set_title("Comparison between OSMnx and luz-verde routes")
 
 ax.get_figure().savefig(
     DATA_PATH / "img" / f"{file_name}_osmnx_comparison.png",
