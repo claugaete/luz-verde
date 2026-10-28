@@ -1,26 +1,11 @@
 from collections.abc import Callable
-from typing import Literal, TypedDict
+from typing import Literal
 
 import geopandas as gpd
 import networkx as nx
 import osmnx as ox
-from shapely import LineString
 
-from .graph import EdgeDefinitions, match_road
-
-
-class IntermediateEdgeData(TypedDict):
-    type: Literal["cross", "walk"]
-    side: Literal["clockwise", "counterclockwise", "left", "right", "center"]
-    edge_osmid: int
-    edge_highway: str
-    edge_name: str
-    edge_crossable: bool
-    edge_walkable: Literal["neither", "left", "right", "both"]
-    length: float
-    geometry: LineString
-    node_safety: Literal["safe", "unsafe", "neutral"] | None
-    node_crossing: Literal["traffic_signals", "uncontrolled", "unmarked", "no"] | None
+from .common import EdgeDefinitions, IntermediateEdgeData, match_road
 
 
 def _get_travel_time_base(
