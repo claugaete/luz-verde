@@ -412,7 +412,7 @@ def get_base_graph(
                 if (
                     (
                         data.get("traffic_signal_distance", np.inf)
-                        <= unsafe_distance_from_signal
+                        <= fix_marked_crossings_near_signals
                     )
                     and data.get("is_marked")
                 )
