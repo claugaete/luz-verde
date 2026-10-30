@@ -899,7 +899,6 @@ name = "luz-verde"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "contextily" },
     { name = "geopandas" },
     { name = "osmnx" },
     { name = "tqdm" },
@@ -907,6 +906,7 @@ dependencies = [
 
 [package.optional-dependencies]
 examples = [
+    { name = "contextily" },
     { name = "folium" },
     { name = "ipykernel" },
     { name = "ipywidgets" },
@@ -922,7 +922,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "contextily", specifier = ">=1.7.1" },
+    { name = "contextily", marker = "extra == 'examples'", specifier = ">=1.7.1" },
     { name = "folium", marker = "extra == 'examples'", specifier = ">=0.20.0" },
     { name = "geopandas", specifier = ">=1.1.4" },
     { name = "ipykernel", marker = "extra == 'examples'", specifier = ">=7.3.0" },
