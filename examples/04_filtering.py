@@ -8,7 +8,7 @@
 # of Greater Santiago or just one municipality (Providencia).
 
 # %%
-USE_GREATER_SANTIAGO = True
+USE_GREATER_SANTIAGO = False
 
 # %% [markdown]
 # ## Imports
