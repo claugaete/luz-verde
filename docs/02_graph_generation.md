@@ -134,7 +134,8 @@ one more rule:
 We use network distance (not euclidean distance) to calculate whether a
 traffic signal is close enough to $u$; by default, it must be no more than 20
 meters away, but this can be changed. This network distance only considers
-major and minor roads; it doesn't travel through pedestrian roads or other ways (like service roads or living streets).
+major and minor roads; it doesn't travel through pedestrian roads or other
+ways (like service roads or living streets).
 
 ### Mislabeled crossings
 
