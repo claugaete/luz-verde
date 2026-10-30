@@ -8,25 +8,43 @@ a new graph, where nodes represent the places you can safely stand in (not the
 places where the roads intersect), and edges are only allowed where crossing a
 street is deemed safe.
 
-![Comparison between OSMnx and luz-verde
-routes](docs/img/osmnx_comparison.png)
-
 By assigning different travel times to different types of edges (e.g.
 crossings that meet a certain condition), you can get the optimal routes
 according to criteria other than route length.
 
-![Comparison between optimal routes with different
-weights](docs/img/fastest_route_comparison.png)
+<p>
+    <img
+        align="middle"
+        alt="Comparison between OSMnx and luz-verde routes"
+        src="docs/img/osmnx_comparison.png"
+        width="49%"
+    />
+    <img
+        align="middle"
+        alt="Comparison between optimal routes with different weights"
+        src="docs/img/fastest_route_comparison.png"
+        width="49%"
+    />
+</p>
 
 You can also filter out certain edges, and get the connected components for
 the filtered graph (i.e. areas where you can go from any node to any other
 node without using the dropped edges).
 
-![Largest components walkable without traffic signals in
-Santiago](docs/img/gran_santiago_largest_components.png)
-
-![Minimum number of traffic signals to get from Plaza de Armas to anywhere in
-Santiago](docs/img/gran_santiago_minimum_traffic_signals.png)
+<p>
+    <img
+        align="middle"
+        alt="Largest components walkable without traffic signals in Santiago"
+        src="docs/img/gran_santiago_largest_components.png"
+        width="49%"
+    />
+    <img
+        align="middle"
+        alt="Minimum number of traffic signals to get from Plaza de Armas to anywhere in Santiago"
+        src="docs/img/gran_santiago_minimum_traffic_signals.png"
+        width="49%"
+    />
+</p>
 
 ## Installation and usage
 
